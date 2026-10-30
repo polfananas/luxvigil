@@ -2,6 +2,8 @@ import argparse
 import sys
 
 from luxvigil import __version__
+from luxvigil.generate import generate, write_csv
+from luxvigil.schema import LogFormatError, load_logs
 
 
 def main(argv=None):
@@ -15,10 +17,34 @@ def main(argv=None):
     scan = sub.add_parser("scan", help="scan a CSV of API request logs for abuse")
     scan.add_argument("logs", help="path to the CSV log file")
 
+    gen = sub.add_parser("generate", help="make a fake log file with abuse planted in it (for demos/tests)")
+    gen.add_argument("--out", default="sample-logs.csv", help="where to write the CSV")
+    gen.add_argument("--users", type=int, default=200, help="number of normal users")
+    gen.add_argument("--days", type=int, default=30, help="days of traffic")
+    gen.add_argument("--seed", type=int, default=42, help="random seed, same seed = same file")
+
     args = parser.parse_args(argv)
 
     if args.command == "scan":
-        print("🕯️ luxvigil: scan isn't built yet, coming soon")
+        try:
+            rows = load_logs(args.logs)
+        except (OSError, LogFormatError) as e:
+            print(f"luxvigil: can't read {args.logs}: {e}", file=sys.stderr)
+            return 1
+        accounts = len({r.account_id for r in rows})
+        print(f"🕯️ luxvigil: read {len(rows):,} requests from {accounts:,} accounts")
+        print("   (the actual checks are coming next)")
+        return 0
+
+    if args.command == "generate":
+        rows, planted = generate(n_users=args.users, days=args.days, seed=args.seed)
+        write_csv(rows, args.out)
+        print(f"🕯️ wrote {len(rows):,} requests to {args.out}")
+        print("   planted on purpose:")
+        print(f"   - big account farm:   {len(planted['farm_big'])} accounts")
+        print(f"   - same-device farm:   {len(planted['farm_device'])} accounts")
+        print(f"   - leaked key:         {len(planted['shared_key'])}")
+        print(f"   - spend spike:        {len(planted['spike'])} account")
         return 0
 
     parser.print_help()

@@ -45,10 +45,32 @@ Every flag tells you *why* it fired. No black box.
 - It doesn't run in real time or sit in your request path.
 - It never sends your logs anywhere. Everything runs on your machine, which matters since prompt logs are usually some of the most sensitive data you have.
 
+## Log format
+
+One row per API request, as a CSV with these columns:
+
+| column | what it is |
+|---|---|
+| `timestamp` | when it happened, ISO 8601 (`2026-10-01T14:03:22Z`) |
+| `account_id` | your id for the account |
+| `email` | email the account signed up with |
+| `api_key_id` | id or hash of the key used, **never the key itself** |
+| `ip` / `country` | client IP and its 2-letter country |
+| `device_id` | device / browser fingerprint (optional, leave empty if you don't have it) |
+| `prompt_hash` | hash of the prompt, so repeated prompts show up without storing them |
+| `input_tokens` / `output_tokens` | tokens in and out |
+| `cost_usd` | what the request cost you |
+
+No logs handy? Make some fake ones with abuse planted on purpose:
+
+```
+$ luxvigil generate --out sample-logs.csv
+```
+
 ## Status
 
 - [x] Name & scope
-- [ ] Log format + fake log generator (for demos and tests)
+- [x] Log format + fake log generator (for demos and tests)
 - [ ] The 5 checks
 - [ ] Terminal report
 - [ ] HTML report (v0.2)
