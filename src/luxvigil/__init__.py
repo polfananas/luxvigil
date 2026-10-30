@@ -1,3 +1,3 @@
-"""luxvigil: find out who's been eating your free AI credits."""
+"""luxvigil: abuse forensics for AI APIs."""
 
 __version__ = "0.0.1"

@@ -1,6 +1,6 @@
 # luxvigil 🕯️
 
-**Find out who's been eating your free AI credits.**
+**Abuse forensics for AI APIs.** Your free tier is part of your attack surface.
 
 luxvigil reads the request logs of your AI API (or any app that gives away tokens or credits) and shows you the abuse hiding in them: account farms, throwaway emails, shared or leaked keys, bots sending the same prompts over and over… and roughly how much it cost you.
 

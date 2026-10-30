@@ -9,7 +9,7 @@ from luxvigil.schema import LogFormatError, load_logs
 def main(argv=None):
     parser = argparse.ArgumentParser(
         prog="luxvigil",
-        description="Find out who's been eating your free AI credits.",
+        description="Abuse forensics for AI APIs.",
     )
     parser.add_argument("--version", action="version", version=f"luxvigil {__version__}")
     sub = parser.add_subparsers(dest="command")

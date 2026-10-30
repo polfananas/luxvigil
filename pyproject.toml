@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "luxvigil"
 version = "0.0.1"
-description = "Find out who's been eating your free AI credits."
+description = "Abuse forensics for AI APIs: find account farms, leaked keys and bots hiding in your request logs."
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "polfananas" }]
