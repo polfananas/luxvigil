@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+
+# never commit real logs
+*.log
+data/
+examples/*.csv
+!examples/sample*.csv
