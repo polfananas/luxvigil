@@ -2,13 +2,15 @@
 
 **Find out who's been eating your free AI credits.**
 
-luxvigil reads the logs of your AI API (or any app that gives away tokens/credits) and tells you who's been abusing it: account farms, throwaway emails, shared or leaked keys, bots sending the same prompts over and over… and roughly how much money it cost you.
+luxvigil reads the request logs of your AI API (or any app that gives away tokens or credits) and shows you the abuse hiding in them: account farms, throwaway emails, shared or leaked keys, bots sending the same prompts over and over… and roughly how much it cost you.
 
-> ⚠️ Super early. Nothing works yet, I'm building it in the open step by step. Star/watch if you want to follow along.
+> ⚠️ Super early. Nothing works yet, I'm building it in the open step by step. Star or watch if you want to follow along.
 
 ## Why
 
-If you run an AI product with a free tier, you're probably feeding people who signed up 300 times with fake emails. Each account looks normal on its own, so per-user rate limits don't catch it. You just see the inference bill going up and conversion going down.
+If you run an AI product with a free tier, you're probably feeding someone who signed up 300 times with fake emails. Each account looks normal on its own, so per-user rate limits don't catch it. All you see is the inference bill going up and conversion going down.
+
+And it's not just a billing problem. Free credits and leaked keys are how a lot of people get anonymous, untraceable access to LLMs: to resell it, to run spam or scam campaigns, or to hammer models with jailbreak attempts without risking their own account. On the attacker side, "free inference" is a resource like any other, and your free tier is part of the attack surface.
 
 luxvigil looks **across** accounts to find the patterns that only show up when you put them side by side.
 
@@ -31,7 +33,7 @@ Checks planned for v0.1:
 
 - **Account farms**: lots of accounts coming from the same IP, network or device
 - **Disposable emails**: signups from mailinator & friends
-- **Shared / leaked keys**: one key used from many countries in a short window
+- **Shared / leaked keys**: one key used from many countries in a short window (often a sign it's been stolen and resold)
 - **Copy-paste bots**: different accounts sending the same prompts or templates
 - **Spend spikes**: a user suddenly burning 10x their usual
 
@@ -41,7 +43,7 @@ Every flag tells you *why* it fired. No black box.
 
 - It doesn't block anything. It only looks at what already happened.
 - It doesn't run in real time or sit in your request path.
-- It never sends your logs anywhere. Everything runs on your machine.
+- It never sends your logs anywhere. Everything runs on your machine, which matters since prompt logs are usually some of the most sensitive data you have.
 
 ## Status
 
