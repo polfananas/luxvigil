@@ -2,7 +2,7 @@ import argparse
 import sys
 
 from luxvigil import __version__
-from luxvigil.checks import find_farms
+from luxvigil.checks import find_disposable_emails, find_farms
 from luxvigil.generate import generate, write_csv
 from luxvigil.schema import LogFormatError, load_logs
 
@@ -46,6 +46,13 @@ def main(argv=None):
                 print(f"     - {f.why}  ·  {f.requests:,} requests  ·  ~${f.cost_usd:,.2f}")
         else:
             print("  ✅ no account farms")
+
+        throwaway = find_disposable_emails(rows)
+        if throwaway:
+            print(f"  📧 {throwaway.why}")
+            print(f"     {throwaway.requests:,} requests  ·  ~${throwaway.cost_usd:,.2f}")
+        else:
+            print("  ✅ no disposable emails")
         print("\n   (more checks coming)")
         return 0
 

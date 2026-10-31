@@ -18,7 +18,7 @@ PRICE_IN = 3 / 1_000_000  # $ per input token
 PRICE_OUT = 15 / 1_000_000  # $ per output token
 
 REAL_DOMAINS = ["gmail.com", "outlook.com", "yahoo.com", "icloud.com", "proton.me", "acme.io", "startup.dev"]
-DISPOSABLE_DOMAINS = ["mailinator.com", "guerrillamail.com", "10minutemail.com", "tempmail.dev", "yopmail.com"]
+DISPOSABLE_DOMAINS = ["mailinator.com", "guerrillamail.com", "10minutemail.com", "sharklasers.com", "yopmail.com"]
 COUNTRIES = ["US"] * 8 + ["GB", "DE", "ES", "FR", "IN", "BR", "CA", "NL", "JP", "MX"]
 FAR_COUNTRIES = ["US", "BR", "RU", "VN", "NG", "ID", "TR", "PK", "UA", "CN", "PH", "EG"]
 
