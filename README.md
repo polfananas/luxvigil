@@ -2,6 +2,8 @@
 
 **Abuse forensics for AI APIs.** Your free tier is part of your attack surface.
 
+> *Nihil occultum quod non manifestetur.* Nothing stays hidden forever (Luke 8:17).
+
 luxvigil reads the request logs of your AI API (or any app that gives away tokens or credits) and shows you the abuse hiding in them: account farms, throwaway emails, shared or leaked keys, bots sending the same prompts over and over… and roughly how much it cost you.
 
 > ⚠️ Super early. Nothing works yet, I'm building it in the open step by step. Star or watch if you want to follow along.
