@@ -2,6 +2,7 @@ import argparse
 import sys
 
 from luxvigil import __version__
+from luxvigil.checks import find_farms
 from luxvigil.generate import generate, write_csv
 from luxvigil.schema import LogFormatError, load_logs
 
@@ -16,6 +17,8 @@ def main(argv=None):
 
     scan = sub.add_parser("scan", help="scan a CSV of API request logs for abuse")
     scan.add_argument("logs", help="path to the CSV log file")
+    scan.add_argument("--min-farm", type=int, default=5,
+                      help="how many linked accounts it takes to call it a farm (default 5)")
 
     gen = sub.add_parser("generate", help="make a fake log file with abuse planted in it (for demos/tests)")
     gen.add_argument("--out", default="sample-logs.csv", help="where to write the CSV")
@@ -32,8 +35,18 @@ def main(argv=None):
             print(f"luxvigil: can't read {args.logs}: {e}", file=sys.stderr)
             return 1
         accounts = len({r.account_id for r in rows})
-        print(f"🕯️ luxvigil: read {len(rows):,} requests from {accounts:,} accounts")
-        print("   (the actual checks are coming next)")
+        print(f"🕯️ luxvigil: read {len(rows):,} requests from {accounts:,} accounts\n")
+
+        farms = find_farms(rows, min_accounts=args.min_farm)
+        if farms:
+            total = sum(f.cost_usd for f in farms)
+            n = sum(len(f.accounts) for f in farms)
+            print(f"  🚨 {len(farms)} account farm{'s' if len(farms) > 1 else ''}: {n} accounts, ~${total:,.2f}")
+            for f in farms:
+                print(f"     - {f.why}  ·  {f.requests:,} requests  ·  ~${f.cost_usd:,.2f}")
+        else:
+            print("  ✅ no account farms")
+        print("\n   (more checks coming)")
         return 0
 
     if args.command == "generate":
