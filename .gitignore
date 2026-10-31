@@ -9,6 +9,6 @@ build/
 
 # never commit real logs
 *.log
-data/
+/data/
 examples/*.csv
 !examples/sample*.csv
