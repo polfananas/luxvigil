@@ -2,7 +2,7 @@ import argparse
 import sys
 
 from luxvigil import __version__
-from luxvigil.checks import find_disposable_emails, find_farms
+from luxvigil.checks import find_disposable_emails, find_farms, find_shared_keys
 from luxvigil.generate import generate, write_csv
 from luxvigil.schema import LogFormatError, load_logs
 
@@ -19,6 +19,8 @@ def main(argv=None):
     scan.add_argument("logs", help="path to the CSV log file")
     scan.add_argument("--min-farm", type=int, default=5,
                       help="how many linked accounts it takes to call it a farm (default 5)")
+    scan.add_argument("--min-countries", type=int, default=5,
+                      help="countries in one day before a key counts as shared (default 5)")
 
     gen = sub.add_parser("generate", help="make a fake log file with abuse planted in it (for demos/tests)")
     gen.add_argument("--out", default="sample-logs.csv", help="where to write the CSV")
@@ -53,6 +55,15 @@ def main(argv=None):
             print(f"     {throwaway.requests:,} requests  ·  ~${throwaway.cost_usd:,.2f}")
         else:
             print("  ✅ no disposable emails")
+
+        keys = find_shared_keys(rows, min_countries=args.min_countries)
+        if keys:
+            total = sum(k.cost_usd for k in keys)
+            print(f"  🔑 {len(keys)} key{'s' if len(keys) > 1 else ''} probably shared or leaked, ~${total:,.2f}")
+            for k in keys:
+                print(f"     - {k.why}  ·  {k.requests:,} requests from abroad  ·  ~${k.cost_usd:,.2f}")
+        else:
+            print("  ✅ no shared or leaked keys")
         print("\n   (more checks coming)")
         return 0
 
