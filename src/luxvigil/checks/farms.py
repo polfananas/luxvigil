@@ -16,6 +16,8 @@ import ipaddress
 from collections import defaultdict
 from dataclasses import dataclass, field
 
+from luxvigil.checks.groups import Groups
+
 
 @dataclass
 class Farm:
@@ -51,23 +53,6 @@ def network_of(ip):
     return str(ipaddress.ip_network(f"{addr}/{prefix}", strict=False))
 
 
-class _Groups:
-    """Tiny union-find: keeps track of which accounts ended up in the same group."""
-
-    def __init__(self):
-        self.parent = {}
-
-    def find(self, x):
-        self.parent.setdefault(x, x)
-        while self.parent[x] != x:
-            self.parent[x] = self.parent[self.parent[x]]
-            x = self.parent[x]
-        return x
-
-    def join(self, a, b):
-        self.parent[self.find(a)] = self.find(b)
-
-
 def find_farms(requests, min_accounts=5):
     """Return the farms found in `requests`, biggest cost first."""
     by_device = defaultdict(set)
@@ -83,7 +68,7 @@ def find_farms(requests, min_accounts=5):
     shared_devices = {d: accs for d, accs in by_device.items() if len(accs) > 1}
     shared_networks = {n: accs for n, accs in by_network.items() if len(accs) > 1}
 
-    groups = _Groups()
+    groups = Groups()
     for accs in list(shared_devices.values()) + list(shared_networks.values()):
         first, *rest = accs
         for acc in rest:
