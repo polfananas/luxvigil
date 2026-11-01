@@ -2,7 +2,7 @@ import argparse
 import sys
 
 from luxvigil import __version__
-from luxvigil.checks import find_disposable_emails, find_farms, find_prompt_bots, find_shared_keys
+from luxvigil.checks import find_disposable_emails, find_farms, find_prompt_bots, find_shared_keys, find_spikes
 from luxvigil.generate import generate, write_csv
 from luxvigil.schema import LogFormatError, load_logs
 
@@ -74,7 +74,16 @@ def main(argv=None):
                 print(f"     - {b.why}  ·  {b.requests:,} requests  ·  ~${b.cost_usd:,.2f}")
         else:
             print("  ✅ no copy-paste bots")
-        print("\n   (more checks coming)")
+
+        spikes = find_spikes(rows)
+        if spikes:
+            total = sum(s.cost_usd for s in spikes)
+            print(f"  💸 {len(spikes)} spend spike{'s' if len(spikes) > 1 else ''}, ~${total:,.2f} over the usual")
+            for s in spikes:
+                print(f"     - {s.why}  ·  {s.requests:,} requests  ·  ~${s.cost_usd:,.2f} extra")
+        else:
+            print("  ✅ no spend spikes")
+        print("\n   (proper report with a deduplicated total coming next)")
         return 0
 
     if args.command == "generate":

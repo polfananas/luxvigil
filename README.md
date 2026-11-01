@@ -6,7 +6,7 @@
 
 luxvigil reads the request logs of your AI API (or any app that gives away tokens or credits) and shows you the abuse hiding in them: account farms, throwaway emails, shared or leaked keys, bots sending the same prompts over and over… and roughly how much it cost you.
 
-> ⚠️ Early days. 4 of the 5 checks already work, the proper report is next. I'm building it in the open step by step, so star or watch if you want to follow along.
+> ⚠️ Early days. All 5 checks work, the proper report is next. I'm building it in the open step by step, so star or watch if you want to follow along.
 >
 > There's no license yet, so for now it's look but don't use. That'll change before v0.1.
 
@@ -79,7 +79,7 @@ $ luxvigil generate --out sample-logs.csv
 - [x] Disposable emails
 - [x] Shared / leaked keys
 - [x] Copy-paste bots
-- [ ] Spend spikes
+- [x] Spend spikes
 - [ ] Terminal report
 - [ ] HTML report (v0.2)
 - [ ] Read LiteLLM / Helicone / gateway exports directly (v0.3)
