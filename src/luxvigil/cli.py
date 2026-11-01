@@ -2,7 +2,7 @@ import argparse
 import sys
 
 from luxvigil import __version__
-from luxvigil.checks import find_disposable_emails, find_farms, find_shared_keys
+from luxvigil.checks import find_disposable_emails, find_farms, find_prompt_bots, find_shared_keys
 from luxvigil.generate import generate, write_csv
 from luxvigil.schema import LogFormatError, load_logs
 
@@ -64,6 +64,16 @@ def main(argv=None):
                 print(f"     - {k.why}  ·  {k.requests:,} requests from abroad  ·  ~${k.cost_usd:,.2f}")
         else:
             print("  ✅ no shared or leaked keys")
+
+        bots = find_prompt_bots(rows)
+        if bots:
+            total = sum(b.cost_usd for b in bots)
+            n = sum(len(b.accounts) for b in bots)
+            print(f"  🤖 {len(bots)} copy-paste bot{'s' if len(bots) > 1 else ''}: {n} accounts, ~${total:,.2f}")
+            for b in bots:
+                print(f"     - {b.why}  ·  {b.requests:,} requests  ·  ~${b.cost_usd:,.2f}")
+        else:
+            print("  ✅ no copy-paste bots")
         print("\n   (more checks coming)")
         return 0
 
