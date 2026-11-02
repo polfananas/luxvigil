@@ -12,7 +12,7 @@ Cost: only the extra spend counts (that day's spend minus the usual), not the wh
 """
 
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import timedelta
 from statistics import median
 
@@ -26,6 +26,7 @@ class Spike:
     last_day: object
     requests: int  # requests on the spike days
     cost_usd: float  # extra spend over the usual
+    days: list = field(default_factory=list)  # every spike day, for the report
 
     @property
     def times(self):
@@ -63,8 +64,9 @@ def find_spikes(requests, multiplier=10, min_history_days=3, min_daily_usd=1.0):
                     current.peak_daily = max(current.peak_daily, spend)
                     current.requests += n
                     current.cost_usd += spend - current.usual_daily
+                    current.days.append(day)
                 else:
-                    current = Spike(account, usual, spend, day, day, n, spend - usual)
+                    current = Spike(account, usual, spend, day, day, n, spend - usual, [day])
                     spikes.append(current)
             else:
                 history.append(spend)  # spike days don't count towards "usual"
