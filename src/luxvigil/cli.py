@@ -7,6 +7,17 @@ from luxvigil.report import build_report, render_text
 from luxvigil.schema import LogFormatError, load_logs
 
 
+def parse_map(items):
+    """['email=user_email', ...] -> {'email': 'user_email', ...}"""
+    mapping = {}
+    for item in items:
+        ours, sep, theirs = item.partition("=")
+        if not sep or not ours.strip() or not theirs.strip():
+            raise LogFormatError(f"--map wants OURS=THEIRS, like email=user_email (got '{item}')")
+        mapping[ours.strip()] = theirs.strip()
+    return mapping
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         prog="luxvigil",
@@ -21,6 +32,12 @@ def main(argv=None):
                       help="how many linked accounts it takes to call it a farm (default 5)")
     scan.add_argument("--min-countries", type=int, default=5,
                       help="countries in one day before a key counts as shared (default 5)")
+    scan.add_argument("--map", action="append", default=[], metavar="OURS=THEIRS",
+                      help="your column name for one of ours, e.g. --map email=user_email (repeat as needed)")
+    scan.add_argument("--price-in", type=float, metavar="USD",
+                      help="$ per 1M input tokens, to work out cost when your logs don't have it")
+    scan.add_argument("--price-out", type=float, metavar="USD",
+                      help="$ per 1M output tokens, to work out cost when your logs don't have it")
 
     gen = sub.add_parser("generate", help="make a fake log file with abuse planted in it (for demos/tests)")
     gen.add_argument("--out", default="sample-logs.csv", help="where to write the CSV")
@@ -32,10 +49,15 @@ def main(argv=None):
 
     if args.command == "scan":
         try:
-            rows = load_logs(args.logs)
+            mapping = parse_map(args.map)
+            notes = []
+            rows = load_logs(args.logs, mapping=mapping, price_in=args.price_in, price_out=args.price_out,
+                             notes=notes)
         except (OSError, LogFormatError) as e:
             print(f"luxvigil: can't read {args.logs}: {e}", file=sys.stderr)
             return 1
+        for note in notes:
+            print(f"   note: {note}", file=sys.stderr)
         report = build_report(rows, min_farm=args.min_farm, min_countries=args.min_countries)
         print("\n".join(render_text(report)))
         return 0

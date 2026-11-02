@@ -68,7 +68,7 @@ One row per API request, as a CSV with these columns:
 
 | column | what it is |
 |---|---|
-| `timestamp` | when it happened, ISO 8601 (`2026-10-01T14:03:22Z`) |
+| `timestamp` | when it happened, ISO 8601 (`2026-10-01T14:03:22Z`) or a unix timestamp |
 | `account_id` | your id for the account |
 | `email` | email the account signed up with |
 | `api_key_id` | id or hash of the key used, **never the key itself** |
@@ -76,7 +76,23 @@ One row per API request, as a CSV with these columns:
 | `device_id` | device / browser fingerprint (optional, leave empty if you don't have it) |
 | `prompt_hash` | hash of the prompt, so repeated prompts show up without storing them |
 | `input_tokens` / `output_tokens` | tokens in and out |
-| `cost_usd` | what the request cost you |
+| `cost_usd` | what the request cost you (optional, see below) |
+
+### Your columns are called something else?
+
+luxvigil already understands the usual suspects (`user_id`, `user_email`, `created_at`, `prompt_tokens`, `completion_tokens`, `client_ip`…) and tells you when it uses one. For anything else, point it at your column with `--map`:
+
+```
+$ luxvigil scan logs.csv --map account_id=customer --map email=signup_email
+```
+
+No cost column? Give it your prices per 1M tokens and it works it out:
+
+```
+$ luxvigil scan logs.csv --price-in 3 --price-out 15
+```
+
+It will never pick up a column called `api_key`, since in some exports that's the raw key. Hash it first and map the hash with `--map api_key_id=...`.
 
 No logs handy? Make some fake ones with abuse planted on purpose:
 
