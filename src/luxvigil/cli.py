@@ -2,8 +2,8 @@ import argparse
 import sys
 
 from luxvigil import __version__
-from luxvigil.checks import find_disposable_emails, find_farms, find_prompt_bots, find_shared_keys, find_spikes
 from luxvigil.generate import generate, write_csv
+from luxvigil.report import build_report, render_text
 from luxvigil.schema import LogFormatError, load_logs
 
 
@@ -36,54 +36,8 @@ def main(argv=None):
         except (OSError, LogFormatError) as e:
             print(f"luxvigil: can't read {args.logs}: {e}", file=sys.stderr)
             return 1
-        accounts = len({r.account_id for r in rows})
-        print(f"🕯️ luxvigil: read {len(rows):,} requests from {accounts:,} accounts\n")
-
-        farms = find_farms(rows, min_accounts=args.min_farm)
-        if farms:
-            total = sum(f.cost_usd for f in farms)
-            n = sum(len(f.accounts) for f in farms)
-            print(f"  🚨 {len(farms)} account farm{'s' if len(farms) > 1 else ''}: {n} accounts, ~${total:,.2f}")
-            for f in farms:
-                print(f"     - {f.why}  ·  {f.requests:,} requests  ·  ~${f.cost_usd:,.2f}")
-        else:
-            print("  ✅ no account farms")
-
-        throwaway = find_disposable_emails(rows)
-        if throwaway:
-            print(f"  📧 {throwaway.why}")
-            print(f"     {throwaway.requests:,} requests  ·  ~${throwaway.cost_usd:,.2f}")
-        else:
-            print("  ✅ no disposable emails")
-
-        keys = find_shared_keys(rows, min_countries=args.min_countries)
-        if keys:
-            total = sum(k.cost_usd for k in keys)
-            print(f"  🔑 {len(keys)} key{'s' if len(keys) > 1 else ''} probably shared or leaked, ~${total:,.2f}")
-            for k in keys:
-                print(f"     - {k.why}  ·  {k.requests:,} requests from abroad  ·  ~${k.cost_usd:,.2f}")
-        else:
-            print("  ✅ no shared or leaked keys")
-
-        bots = find_prompt_bots(rows)
-        if bots:
-            total = sum(b.cost_usd for b in bots)
-            n = sum(len(b.accounts) for b in bots)
-            print(f"  🤖 {len(bots)} copy-paste bot{'s' if len(bots) > 1 else ''}: {n} accounts, ~${total:,.2f}")
-            for b in bots:
-                print(f"     - {b.why}  ·  {b.requests:,} requests  ·  ~${b.cost_usd:,.2f}")
-        else:
-            print("  ✅ no copy-paste bots")
-
-        spikes = find_spikes(rows)
-        if spikes:
-            total = sum(s.cost_usd for s in spikes)
-            print(f"  💸 {len(spikes)} spend spike{'s' if len(spikes) > 1 else ''}, ~${total:,.2f} over the usual")
-            for s in spikes:
-                print(f"     - {s.why}  ·  {s.requests:,} requests  ·  ~${s.cost_usd:,.2f} extra")
-        else:
-            print("  ✅ no spend spikes")
-        print("\n   (proper report with a deduplicated total coming next)")
+        report = build_report(rows, min_farm=args.min_farm, min_countries=args.min_countries)
+        print("\n".join(render_text(report)))
         return 0
 
     if args.command == "generate":

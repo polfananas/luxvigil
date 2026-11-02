@@ -6,7 +6,7 @@
 
 luxvigil reads the request logs of your AI API (or any app that gives away tokens or credits) and shows you the abuse hiding in them: account farms, throwaway emails, shared or leaked keys, bots sending the same prompts over and over… and roughly how much it cost you.
 
-> ⚠️ Early days. All 5 checks work, the proper report is next. I'm building it in the open step by step, so star or watch if you want to follow along.
+> ⚠️ Early days. All 5 checks and the terminal report work. I'm building it in the open step by step, so star or watch if you want to follow along.
 >
 > There's no license yet, so for now it's look but don't use. That'll change before v0.1.
 
@@ -18,22 +18,35 @@ And it's not just a billing problem. Free credits and leaked keys are how a lot 
 
 luxvigil looks **across** accounts to find the patterns that only show up when you put them side by side.
 
-## What it'll do (v0.1)
+## What it does
 
-You give it a CSV export of your request logs, it gives you a report:
+You give it a CSV export of your request logs, it gives you a report. Here it is on the fake sample logs (`luxvigil generate`), which have two farms, a leaked key and a spend spike planted in them:
 
 ```
-$ luxvigil scan logs-october.csv
+$ luxvigil scan sample-logs.csv
 
-🕯️ luxvigil · October 2026
+🕯️ luxvigil · 2026-10-01 to 2026-10-30
 
-  🚨 3 account farms        214 accounts, same device / IP range
-  🔑 2 keys in 9+ countries  probably shared or leaked
-  📧 18% of signups          disposable email domains
-  💸 ~$4,300                 estimated cost of abuse this month
+  11,405 requests · 285 accounts · $324.60 spent
+  💰 ~$218.01 looks like abuse (67% of your spend), 87 accounts involved
+
+  🚨 2 account farms, 85 accounts
+     - 60 accounts on 3 shared devices + 1 shared network (185.220.101.0/24)  ·  3,368 requests  ·  ~$144.89
+     - 25 accounts on 1 shared device  ·  968 requests  ·  ~$32.39
+  📧 60 of 285 accounts (21%) use throwaway emails: mailinator.com (16), sharklasers.com (12), 10minutemail.com (12)
+     3,368 requests  ·  ~$144.89
+  🔑 1 key probably shared or leaked
+     - key key_eb500b7a7780b4c2: 13 countries in a single day, 401 IPs, home is GB  ·  400 requests from abroad  ·  ~$17.97
+  🤖 1 copy-paste bot, 60 accounts
+     - 60 accounts sending the same 5 prompts over and over (3,368 times)  ·  3,368 requests  ·  ~$144.89
+  💸 2 spend spikes
+     - acc_0100 went from ~$0.02/day to $7.99/day (368x) on 2026-10-28 to 2026-10-30  ·  302 requests  ·  ~$22.76 extra
+     - acc_0007 went from ~$0.02/day to $6.26/day (266x) on 2026-10-23 to 2026-10-25  ·  402 requests  ·  ~$17.93 extra
+
+  The same account can show up in more than one check. The total at the top counts it once.
 ```
 
-Checks planned for v0.1:
+The checks:
 
 - **Account farms**: lots of accounts coming from the same IP, network or device
 - **Disposable emails**: signups from mailinator & friends
@@ -80,7 +93,7 @@ $ luxvigil generate --out sample-logs.csv
 - [x] Shared / leaked keys
 - [x] Copy-paste bots
 - [x] Spend spikes
-- [ ] Terminal report
+- [x] Terminal report (with a total that counts each account once)
 - [ ] HTML report (v0.2)
 - [ ] Read LiteLLM / Helicone / gateway exports directly (v0.3)
 
