@@ -2,6 +2,7 @@ import argparse
 import sys
 
 from luxvigil import __version__
+from luxvigil.config import ConfigError, load_config
 from luxvigil.generate import generate, write_csv
 from luxvigil.report import build_report, render_text
 from luxvigil.schema import LogFormatError, load_logs
@@ -32,6 +33,8 @@ def main(argv=None):
                       help="how many linked accounts it takes to call it a farm (default 5)")
     scan.add_argument("--min-countries", type=int, default=5,
                       help="countries in one day before a key counts as shared (default 5)")
+    scan.add_argument("--config", metavar="PATH",
+                      help="trusted networks and ignored accounts (default: ./luxvigil.toml if it exists)")
     scan.add_argument("--map", action="append", default=[], metavar="OURS=THEIRS",
                       help="your column name for one of ours, e.g. --map email=user_email (repeat as needed)")
     scan.add_argument("--price-in", type=float, metavar="USD",
@@ -58,7 +61,12 @@ def main(argv=None):
             return 1
         for note in notes:
             print(f"   note: {note}", file=sys.stderr)
-        report = build_report(rows, min_farm=args.min_farm, min_countries=args.min_countries)
+        try:
+            config = load_config(args.config)
+        except (OSError, ConfigError) as e:
+            print(f"luxvigil: bad config: {e}", file=sys.stderr)
+            return 1
+        report = build_report(rows, min_farm=args.min_farm, min_countries=args.min_countries, config=config)
         print("\n".join(render_text(report)))
         return 0
 

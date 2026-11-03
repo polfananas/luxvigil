@@ -94,6 +94,23 @@ $ luxvigil scan logs.csv --price-in 3 --price-out 15
 
 It will never pick up a column called `api_key`, since in some exports that's the raw key. Hash it first and map the hash with `--map api_key_id=...`.
 
+### Telling it what's normal for you
+
+Your office, your VPN or a big customer behind one network will look like a farm, since lots of accounts share an IP range. Drop a `luxvigil.toml` next to your logs (or pass `--config`):
+
+```toml
+[trusted]
+networks = ["203.0.113.0/24"]  # office, VPN exit, a customer's office...
+devices = ["kiosk-01"]
+
+[ignore]
+accounts = ["qa_*"]
+emails = ["*@yourcompany.com"]
+keys = ["key_ci_*"]
+```
+
+Trusted networks and devices are still checked, they just never link accounts into a farm. Ignored accounts are skipped completely, but still count towards your total spend.
+
 No logs handy? Make some fake ones with abuse planted on purpose:
 
 ```

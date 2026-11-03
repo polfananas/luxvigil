@@ -53,13 +53,18 @@ def network_of(ip):
     return str(ipaddress.ip_network(f"{addr}/{prefix}", strict=False))
 
 
-def find_farms(requests, min_accounts=5):
-    """Return the farms found in `requests`, biggest cost first."""
+def find_farms(requests, min_accounts=5, config=None):
+    """Return the farms found in `requests`, biggest cost first.
+
+    Devices and networks trusted in the config never link accounts.
+    """
     by_device = defaultdict(set)
     by_network = defaultdict(set)
     for r in requests:
-        if r.device_id:
+        if r.device_id and not (config and r.device_id in config.trusted_devices):
             by_device[r.device_id].add(r.account_id)
+        if config and config.trusts_ip(r.ip):
+            continue
         net = network_of(r.ip)
         if net:
             by_network[net].add(r.account_id)

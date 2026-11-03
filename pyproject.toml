@@ -7,7 +7,7 @@ name = "luxvigil"
 version = "0.0.1"
 description = "Abuse forensics for AI APIs: find account farms, leaked keys and bots hiding in your request logs."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 authors = [{ name = "polfananas" }]
 dependencies = []
 
