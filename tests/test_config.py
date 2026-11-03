@@ -1,8 +1,12 @@
+import ipaddress
 from datetime import datetime, timezone
 
 import pytest
 
+from luxvigil.checks.farms import find_farms
+from luxvigil.cli import main
 from luxvigil.config import Config, ConfigError, load_config
+from luxvigil.report import build_report, render_text
 from luxvigil.schema import Request
 
 
@@ -70,3 +74,53 @@ def test_bad_network(tmp_path):
 def test_bad_toml(tmp_path):
     with pytest.raises(ConfigError, match="isn't valid TOML"):
         load_config(write(tmp_path, "[trusted\n"))
+
+
+# --- with the checks ---
+
+
+def office(n=20):
+    """n real people behind the same office network"""
+    rows = []
+    for i in range(n):
+        r = req(account=f"emp{i}", email=f"emp{i}@acme.io", key=f"k{i}")
+        r.ip = f"203.0.113.{i + 10}"
+        rows.append(r)
+    return rows
+
+
+def test_office_network_looks_like_a_farm_until_you_trust_it():
+    rows = office()
+    assert len(find_farms(rows)) == 1
+    cfg = Config(trusted_networks=[ipaddress.ip_network("203.0.113.0/24")])
+    assert find_farms(rows, config=cfg) == []
+
+
+def test_trusted_device_doesnt_link():
+    rows = [req(account=f"a{i}") for i in range(6)]
+    for i, r in enumerate(rows):
+        r.ip = f"10.{i}.0.1"
+        r.device_id = "kiosk-01"
+    assert len(find_farms(rows)) == 1
+    assert find_farms(rows, config=Config(trusted_devices={"kiosk-01"})) == []
+
+
+def test_ignored_accounts_still_count_in_total_spend():
+    rows = office()
+    cfg = Config(ignore_emails=["*@acme.io"], path="luxvigil.toml")
+    report = build_report(rows, config=cfg)
+    assert report.clean
+    assert report.accounts == 20 and report.total_cost == sum(r.cost_usd for r in rows)
+    assert report.ignored_accounts == 20
+    assert any("skipping 20 accounts" in line for line in render_text(report))
+
+
+def test_cli_config(tmp_path, capsys):
+    logs = tmp_path / "logs.csv"
+    main(["generate", "--out", str(logs), "--users", "20"])
+    bad = write(tmp_path, "[nope]\n")
+    assert main(["scan", str(logs), "--config", str(bad)]) == 1
+    assert "bad config" in capsys.readouterr().err
+    good = write(tmp_path, '[ignore]\nemails = ["*@mailinator.com"]\n')
+    assert main(["scan", str(logs), "--config", str(good)]) == 0
+    assert "using" in capsys.readouterr().out

@@ -31,6 +31,8 @@ class Report:
     spikes: list = field(default_factory=list)
     abuse_cost: float = 0.0  # deduplicated
     flagged_accounts: set = field(default_factory=set)
+    ignored_accounts: int = 0  # left out because of luxvigil.toml
+    config_path: str = ""
 
     @property
     def abuse_share(self):
@@ -41,14 +43,18 @@ class Report:
         return not (self.farms or self.emails or self.keys or self.bots or self.spikes)
 
 
-def build_report(rows, min_farm=5, min_countries=5):
+def build_report(rows, min_farm=5, min_countries=5, config=None):
+    all_rows = rows
+    if config:
+        rows = [r for r in rows if not config.ignores(r)]
+
     report = Report(
-        requests=len(rows),
-        accounts=len({r.account_id for r in rows}),
-        total_cost=sum(r.cost_usd for r in rows),
-        first_seen=min((r.timestamp for r in rows), default=None),
-        last_seen=max((r.timestamp for r in rows), default=None),
-        farms=find_farms(rows, min_accounts=min_farm),
+        requests=len(all_rows),
+        accounts=len({r.account_id for r in all_rows}),
+        total_cost=sum(r.cost_usd for r in all_rows),
+        first_seen=min((r.timestamp for r in all_rows), default=None),
+        last_seen=max((r.timestamp for r in all_rows), default=None),
+        farms=find_farms(rows, min_accounts=min_farm, config=config),
         emails=find_disposable_emails(rows),
         keys=find_shared_keys(rows, min_countries=min_countries),
         bots=find_prompt_bots(rows),
@@ -86,6 +92,8 @@ def build_report(rows, min_farm=5, min_countries=5):
             counted += max(0.0, extra - counted_on_day[(s.account, day)])
 
     report.abuse_cost = counted
+    report.ignored_accounts = report.accounts - len({r.account_id for r in rows})
+    report.config_path = config.path if config else ""
     report.flagged_accounts = (
         whole
         | {a for k in report.keys for a in k.accounts}
@@ -110,6 +118,9 @@ def render_text(report):
     out.append(
         f"  {report.requests:,} requests · {report.accounts:,} accounts · ${report.total_cost:,.2f} spent"
     )
+    if report.config_path:
+        skipped = f", skipping {_plural(report.ignored_accounts, 'account')}" if report.ignored_accounts else ""
+        out.append(f"  ⚙️  using {report.config_path}{skipped}")
 
     if report.clean:
         out.append("  ✅ nothing suspicious found")
