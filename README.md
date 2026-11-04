@@ -20,10 +20,10 @@ luxvigil looks **across** accounts to find the patterns that only show up when y
 
 ## What it does
 
-You give it a CSV export of your request logs, it gives you a report. Here it is on the fake sample logs (`luxvigil generate`), which have two farms, a leaked key and a spend spike planted in them:
+You give it a CSV export of your request logs, it gives you a report. Want to see it before digging out your logs? `luxvigil demo` makes a month of fake logs with two farms, a leaked key and a spend spike planted in them, and scans them:
 
 ```
-$ luxvigil scan sample-logs.csv
+$ luxvigil demo
 
 🕯️ luxvigil · 2026-10-01 to 2026-10-30
 
@@ -111,7 +111,7 @@ keys = ["key_ci_*"]
 
 Trusted networks and devices are still checked, they just never link accounts into a farm. Ignored accounts are skipped completely, but still count towards your total spend.
 
-No logs handy? Make some fake ones with abuse planted on purpose:
+No logs handy? `luxvigil demo` scans fake ones for you, or make your own to play with:
 
 ```
 $ luxvigil generate --out sample-logs.csv
