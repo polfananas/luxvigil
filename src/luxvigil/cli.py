@@ -1,8 +1,10 @@
 import argparse
 import sys
+import tempfile
+from pathlib import Path
 
 from luxvigil import __version__
-from luxvigil.config import ConfigError, load_config
+from luxvigil.config import Config, ConfigError, load_config
 from luxvigil.generate import generate, write_csv
 from luxvigil.report import build_report, render_text
 from luxvigil.schema import LogFormatError, load_logs
@@ -17,6 +19,25 @@ def parse_map(items):
             raise LogFormatError(f"--map wants OURS=THEIRS, like email=user_email (got '{item}')")
         mapping[ours.strip()] = theirs.strip()
     return mapping
+
+
+def run_demo(seed=42, keep=None):
+    rows, planted = generate(seed=seed)
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(keep) if keep else Path(tmp) / "demo-logs.csv"
+        write_csv(rows, path)
+        logs = load_logs(path)
+
+    print("🕯️ demo: a month of fake API logs from 200 normal users, with some abuse planted in it:")
+    print(f"   two account farms ({len(planted['farm_big'])} + {len(planted['farm_device'])} accounts), "
+          "a leaked key and a spend spike. Let's see what luxvigil finds.\n")
+    # the demo ignores any luxvigil.toml lying around, so it always shows the same thing
+    print("\n".join(render_text(build_report(logs, config=Config()))))
+    print()
+    if keep:
+        print(f"   fake logs saved to {keep}")
+    print("   now try it on yours: luxvigil scan your-logs.csv")
+    return 0
 
 
 def main(argv=None):
@@ -41,6 +62,10 @@ def main(argv=None):
                       help="$ per 1M input tokens, to work out cost when your logs don't have it")
     scan.add_argument("--price-out", type=float, metavar="USD",
                       help="$ per 1M output tokens, to work out cost when your logs don't have it")
+
+    demo = sub.add_parser("demo", help="try it without your own logs: makes fake ones and scans them")
+    demo.add_argument("--seed", type=int, default=42, help="random seed, same seed = same logs")
+    demo.add_argument("--keep", metavar="PATH", help="also save the fake logs here, to poke at them")
 
     gen = sub.add_parser("generate", help="make a fake log file with abuse planted in it (for demos/tests)")
     gen.add_argument("--out", default="sample-logs.csv", help="where to write the CSV")
@@ -69,6 +94,9 @@ def main(argv=None):
         report = build_report(rows, min_farm=args.min_farm, min_countries=args.min_countries, config=config)
         print("\n".join(render_text(report)))
         return 0
+
+    if args.command == "demo":
+        return run_demo(seed=args.seed, keep=args.keep)
 
     if args.command == "generate":
         rows, planted = generate(n_users=args.users, days=args.days, seed=args.seed)
