@@ -1,6 +1,7 @@
 """The log format luxvigil reads: one row per API request, as a CSV."""
 
 import csv
+import ipaddress
 import math
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -153,6 +154,7 @@ def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None):
             )
 
         rows = []
+        seen, duplicates, bad_ips = set(), 0, 0
         for line, r in enumerate(reader, start=2):
             try:
                 if None in r.values():
@@ -182,4 +184,20 @@ def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None):
                 )
             except (ValueError, KeyError, TypeError) as e:
                 raise LogFormatError(f"line {line}: {e}") from e
+
+            fingerprint = tuple(r.values())
+            if fingerprint in seen:
+                duplicates += 1
+            seen.add(fingerprint)
+            try:
+                ipaddress.ip_address(rows[-1].ip)
+            except ValueError:
+                bad_ips += 1
+
+    # these don't stop the scan, but you should know about them
+    if notes is not None:
+        if duplicates:
+            notes.append(f"{duplicates:,} rows are exact copies of an earlier row, check your export isn't doubled")
+        if bad_ips:
+            notes.append(f"{bad_ips:,} rows have no valid IP, they're left out of the network checks")
     return rows

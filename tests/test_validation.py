@@ -51,3 +51,18 @@ def test_short_row_is_rejected(tmp_path):
         f.write("2026-10-01T00:00:00Z,b,b@gmail.com\n")
     with pytest.raises(LogFormatError, match="line 3: this row has fewer columns"):
         load_logs(path)
+
+
+def test_duplicates_and_bad_ips_are_reported(tmp_path):
+    notes = []
+    rows = load_logs(write(tmp_path, {}, {}, {"account_id": "b", "ip": "nope"}, {"account_id": "c", "ip": ""}),
+                     notes=notes)
+    assert len(rows) == 4  # nothing dropped, just flagged
+    assert any("1 rows are exact copies" in n for n in notes)
+    assert any("2 rows have no valid IP" in n for n in notes)
+
+
+def test_clean_file_has_no_warnings(tmp_path):
+    notes = []
+    load_logs(write(tmp_path, {}, {"account_id": "b"}), notes=notes)
+    assert notes == []
