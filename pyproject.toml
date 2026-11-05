@@ -11,6 +11,9 @@ requires-python = ">=3.11"
 authors = [{ name = "polfananas" }]
 dependencies = []
 
+[project.optional-dependencies]
+dev = ["pytest"]
+
 [project.scripts]
 luxvigil = "luxvigil.cli:main"
 
