@@ -96,6 +96,10 @@ $ luxvigil scan logs.csv --price-in 3 --price-out 15
 
 It will never pick up a column called `api_key`, since in some exports that's the raw key. Hash it first and map the hash with `--map api_key_id=...`.
 
+### Bad rows
+
+luxvigil stops at the first row it can't trust (a cost of `nan` or `-5`, negative tokens, an empty account id…) and tells you which line, rather than quietly getting the totals wrong. If your export has a few broken rows and you just want the rest, add `--skip-bad-rows` and it'll tell you how many it skipped. It also warns you about duplicated rows and rows without a valid IP.
+
 ### Telling it what's normal for you
 
 Your office, your VPN or a big customer behind one network will look like a farm, since lots of accounts share an IP range. Drop a `luxvigil.toml` next to your logs (or pass `--config`):

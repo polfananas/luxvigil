@@ -1,6 +1,8 @@
 """The log format luxvigil reads: one row per API request, as a CSV."""
 
 import csv
+import ipaddress
+import math
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -71,6 +73,27 @@ def _parse_time(value):
     return datetime.fromtimestamp(number, tz=timezone.utc)
 
 
+def _tokens(value, name):
+    """A token count: a whole number, 0 or more. "12.0" is fine, "12.5" or "-3" aren't."""
+    try:
+        n = float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{name} should be a number, got '{value}'") from None
+    if not math.isfinite(n) or n < 0 or n != int(n):
+        raise ValueError(f"{name} should be a whole number, 0 or more, got '{value}'")
+    return int(n)
+
+
+def _money(value, name):
+    try:
+        x = float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{name} should be a number, got '{value}'") from None
+    if not math.isfinite(x) or x < 0:
+        raise ValueError(f"{name} should be 0 or more, got '{value}'")
+    return x
+
+
 def resolve_columns(fieldnames, mapping=None):
     """Work out which column in the file holds each of ours.
 
@@ -105,12 +128,13 @@ def resolve_columns(fieldnames, mapping=None):
     return resolved, notes
 
 
-def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None):
+def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None, skip_bad=False):
     """Read a log CSV and return a list of Request. Fails loudly on bad input.
 
     mapping: {our_column: their_column} for files that name things differently.
     price_in / price_out: $ per 1M tokens, used to work out the cost when there's no cost column.
-    notes: pass a list to get told which columns were matched automatically.
+    notes: pass a list to get told which columns were matched automatically, and about duplicates etc.
+    skip_bad: skip rows that don't parse instead of stopping (you're told how many and why).
     """
     with open(path, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
@@ -131,12 +155,18 @@ def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None):
             )
 
         rows = []
+        seen, duplicates, bad_ips = set(), 0, 0
+        skipped, first_error = 0, None
         for line, r in enumerate(reader, start=2):
             try:
-                tin = int(float(r[cols["input_tokens"]]))
-                tout = int(float(r[cols["output_tokens"]]))
+                if None in r.values():
+                    raise ValueError("this row has fewer columns than the header")
+                if not r[cols["account_id"]].strip():
+                    raise ValueError("account_id is empty")
+                tin = _tokens(r[cols["input_tokens"]], "input_tokens")
+                tout = _tokens(r[cols["output_tokens"]], "output_tokens")
                 if "cost_usd" in cols:
-                    cost = float(r[cols["cost_usd"]])
+                    cost = _money(r[cols["cost_usd"]], "cost_usd")
                 else:
                     cost = (tin * price_in + tout * price_out) / 1_000_000
                 rows.append(
@@ -155,5 +185,28 @@ def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None):
                     )
                 )
             except (ValueError, KeyError, TypeError) as e:
-                raise LogFormatError(f"line {line}: {e}") from e
+                if not skip_bad:
+                    raise LogFormatError(f"line {line}: {e} (use --skip-bad-rows to skip rows like this)") from e
+                skipped += 1
+                first_error = first_error or f"line {line}: {e}"
+                continue
+
+            fingerprint = tuple(r.values())
+            if fingerprint in seen:
+                duplicates += 1
+            seen.add(fingerprint)
+            try:
+                ipaddress.ip_address(rows[-1].ip)
+            except ValueError:
+                bad_ips += 1
+
+    # these don't stop the scan, but you should know about them
+    if notes is not None:
+        if skipped:
+            notes.append(f"skipped {skipped:,} bad row{'s' if skipped != 1 else ''}, the first one was {first_error}")
+        if duplicates:
+            notes.append(f"{duplicates:,} duplicate row{'s' if duplicates != 1 else ''} (exact copy of an earlier one), "
+                         "check your export isn't doubled")
+        if bad_ips:
+            notes.append(f"{bad_ips:,} row{'s' if bad_ips != 1 else ''} without a valid IP, left out of the network checks")
     return rows
