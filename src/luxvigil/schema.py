@@ -197,7 +197,8 @@ def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None):
     # these don't stop the scan, but you should know about them
     if notes is not None:
         if duplicates:
-            notes.append(f"{duplicates:,} rows are exact copies of an earlier row, check your export isn't doubled")
+            notes.append(f"{duplicates:,} duplicate row{'s' if duplicates != 1 else ''} (exact copy of an earlier one), "
+                         "check your export isn't doubled")
         if bad_ips:
-            notes.append(f"{bad_ips:,} rows have no valid IP, they're left out of the network checks")
+            notes.append(f"{bad_ips:,} row{'s' if bad_ips != 1 else ''} without a valid IP, left out of the network checks")
     return rows
