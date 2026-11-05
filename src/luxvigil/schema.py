@@ -128,12 +128,13 @@ def resolve_columns(fieldnames, mapping=None):
     return resolved, notes
 
 
-def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None):
+def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None, skip_bad=False):
     """Read a log CSV and return a list of Request. Fails loudly on bad input.
 
     mapping: {our_column: their_column} for files that name things differently.
     price_in / price_out: $ per 1M tokens, used to work out the cost when there's no cost column.
-    notes: pass a list to get told which columns were matched automatically.
+    notes: pass a list to get told which columns were matched automatically, and about duplicates etc.
+    skip_bad: skip rows that don't parse instead of stopping (you're told how many and why).
     """
     with open(path, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
@@ -155,6 +156,7 @@ def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None):
 
         rows = []
         seen, duplicates, bad_ips = set(), 0, 0
+        skipped, first_error = 0, None
         for line, r in enumerate(reader, start=2):
             try:
                 if None in r.values():
@@ -183,7 +185,11 @@ def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None):
                     )
                 )
             except (ValueError, KeyError, TypeError) as e:
-                raise LogFormatError(f"line {line}: {e}") from e
+                if not skip_bad:
+                    raise LogFormatError(f"line {line}: {e} (use --skip-bad-rows to skip rows like this)") from e
+                skipped += 1
+                first_error = first_error or f"line {line}: {e}"
+                continue
 
             fingerprint = tuple(r.values())
             if fingerprint in seen:
@@ -196,6 +202,8 @@ def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None):
 
     # these don't stop the scan, but you should know about them
     if notes is not None:
+        if skipped:
+            notes.append(f"skipped {skipped:,} bad row{'s' if skipped != 1 else ''}, the first one was {first_error}")
         if duplicates:
             notes.append(f"{duplicates:,} duplicate row{'s' if duplicates != 1 else ''} (exact copy of an earlier one), "
                          "check your export isn't doubled")

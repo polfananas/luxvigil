@@ -58,6 +58,8 @@ def main(argv=None):
                       help="trusted networks and ignored accounts (default: ./luxvigil.toml if it exists)")
     scan.add_argument("--map", action="append", default=[], metavar="OURS=THEIRS",
                       help="your column name for one of ours, e.g. --map email=user_email (repeat as needed)")
+    scan.add_argument("--skip-bad-rows", action="store_true",
+                      help="skip rows that can't be read instead of stopping (you're told how many)")
     scan.add_argument("--price-in", type=float, metavar="USD",
                       help="$ per 1M input tokens, to work out cost when your logs don't have it")
     scan.add_argument("--price-out", type=float, metavar="USD",
@@ -76,11 +78,14 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     if args.command == "scan":
+        if (args.price_in is not None and args.price_in < 0) or (args.price_out is not None and args.price_out < 0):
+            print("luxvigil: prices can't be negative", file=sys.stderr)
+            return 1
         try:
             mapping = parse_map(args.map)
             notes = []
             rows = load_logs(args.logs, mapping=mapping, price_in=args.price_in, price_out=args.price_out,
-                             notes=notes)
+                             notes=notes, skip_bad=args.skip_bad_rows)
         except (OSError, LogFormatError) as e:
             print(f"luxvigil: can't read {args.logs}: {e}", file=sys.stderr)
             return 1

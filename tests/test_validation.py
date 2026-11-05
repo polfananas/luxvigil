@@ -2,6 +2,7 @@ import csv
 
 import pytest
 
+from luxvigil.cli import main
 from luxvigil.schema import COLUMNS, LogFormatError, load_logs
 
 
@@ -66,3 +67,21 @@ def test_clean_file_has_no_warnings(tmp_path):
     notes = []
     load_logs(write(tmp_path, {}, {"account_id": "b"}), notes=notes)
     assert notes == []
+
+
+def test_skip_bad_rows(tmp_path):
+    path = write(tmp_path, {}, {"account_id": "b", "cost_usd": "nan"}, {"account_id": "c", "input_tokens": "-1"})
+    with pytest.raises(LogFormatError, match="--skip-bad-rows"):
+        load_logs(path)
+    notes = []
+    rows = load_logs(path, skip_bad=True, notes=notes)
+    assert [r.account_id for r in rows] == ["a"]
+    assert any("skipped 2 bad rows, the first one was line 3: cost_usd" in n for n in notes)
+
+
+def test_cli_skip_bad_rows_and_negative_prices(tmp_path, capsys):
+    path = write(tmp_path, {}, {"account_id": "b", "cost_usd": "inf"})
+    assert main(["scan", str(path)]) == 1
+    assert main(["scan", str(path), "--skip-bad-rows"]) == 0
+    assert "skipped 1 bad row" in capsys.readouterr().err
+    assert main(["scan", str(path), "--price-in", "-1", "--price-out", "1"]) == 1
