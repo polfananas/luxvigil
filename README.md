@@ -1,5 +1,7 @@
 # luxvigil 🕯️
 
+[![tests](https://github.com/polfananas/luxvigil/actions/workflows/tests.yml/badge.svg)](https://github.com/polfananas/luxvigil/actions/workflows/tests.yml)
+
 **Abuse forensics for AI APIs.** Your free tier is part of your attack surface.
 
 > *Nihil occultum quod non manifestetur.* Nothing stays hidden forever (Luke 8:17).
