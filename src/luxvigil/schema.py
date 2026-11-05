@@ -1,6 +1,7 @@
 """The log format luxvigil reads: one row per API request, as a CSV."""
 
 import csv
+import math
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -71,6 +72,27 @@ def _parse_time(value):
     return datetime.fromtimestamp(number, tz=timezone.utc)
 
 
+def _tokens(value, name):
+    """A token count: a whole number, 0 or more. "12.0" is fine, "12.5" or "-3" aren't."""
+    try:
+        n = float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{name} should be a number, got '{value}'") from None
+    if not math.isfinite(n) or n < 0 or n != int(n):
+        raise ValueError(f"{name} should be a whole number, 0 or more, got '{value}'")
+    return int(n)
+
+
+def _money(value, name):
+    try:
+        x = float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{name} should be a number, got '{value}'") from None
+    if not math.isfinite(x) or x < 0:
+        raise ValueError(f"{name} should be 0 or more, got '{value}'")
+    return x
+
+
 def resolve_columns(fieldnames, mapping=None):
     """Work out which column in the file holds each of ours.
 
@@ -133,10 +155,14 @@ def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None):
         rows = []
         for line, r in enumerate(reader, start=2):
             try:
-                tin = int(float(r[cols["input_tokens"]]))
-                tout = int(float(r[cols["output_tokens"]]))
+                if None in r.values():
+                    raise ValueError("this row has fewer columns than the header")
+                if not r[cols["account_id"]].strip():
+                    raise ValueError("account_id is empty")
+                tin = _tokens(r[cols["input_tokens"]], "input_tokens")
+                tout = _tokens(r[cols["output_tokens"]], "output_tokens")
                 if "cost_usd" in cols:
-                    cost = float(r[cols["cost_usd"]])
+                    cost = _money(r[cols["cost_usd"]], "cost_usd")
                 else:
                     cost = (tin * price_in + tout * price_out) / 1_000_000
                 rows.append(
