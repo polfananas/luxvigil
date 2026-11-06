@@ -1,10 +1,12 @@
 import argparse
+import json
 import sys
 import tempfile
 from pathlib import Path
 
 from luxvigil import __version__
 from luxvigil.config import Config, ConfigError, load_config
+from luxvigil.export import to_dict
 from luxvigil.generate import generate, write_csv
 from luxvigil.report import build_report, render_text
 from luxvigil.schema import LogFormatError, load_logs
@@ -58,6 +60,8 @@ def main(argv=None):
                       help="trusted networks and ignored accounts (default: ./luxvigil.toml if it exists)")
     scan.add_argument("--map", action="append", default=[], metavar="OURS=THEIRS",
                       help="your column name for one of ours, e.g. --map email=user_email (repeat as needed)")
+    scan.add_argument("--json", action="store_true",
+                      help="print the report as JSON instead (findings with ids, evidence and next steps)")
     scan.add_argument("--skip-bad-rows", action="store_true",
                       help="skip rows that can't be read instead of stopping (you're told how many)")
     scan.add_argument("--price-in", type=float, metavar="USD",
@@ -97,7 +101,10 @@ def main(argv=None):
             print(f"luxvigil: bad config: {e}", file=sys.stderr)
             return 1
         report = build_report(rows, min_farm=args.min_farm, min_countries=args.min_countries, config=config)
-        print("\n".join(render_text(report)))
+        if args.json:
+            print(json.dumps(to_dict(report, notes), indent=2, ensure_ascii=False))
+        else:
+            print("\n".join(render_text(report)))
         return 0
 
     if args.command == "demo":

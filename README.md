@@ -99,6 +99,27 @@ $ luxvigil scan logs.csv --price-in 3 --price-out 15
 
 It will never pick up a column called `api_key`, since in some exports that's the raw key. Hash it first and map the hash with `--map api_key_id=...`.
 
+### JSON
+
+Want to feed it into something else? `--json` prints the same report as data. Every finding has a stable id (same logs, same ids), how strong it is, the evidence behind it, what could explain it innocently and what to check next:
+
+```json
+{
+  "id": "shared_key-c09f5a151c",
+  "check": "shared_key",
+  "severity": "likely",
+  "summary": "key key_eb500b7a7780b4c2: 13 countries in a single day, 401 IPs, home is GB",
+  "accounts": ["acc_0007"],
+  "requests": 400,
+  "cost_usd": 17.9693,
+  "evidence": {"key": "key_eb500b7a7780b4c2", "home_country": "GB", "peak_countries_in_a_day": 13, "...": "..."},
+  "innocent_explanation": "a customer running the same key from servers in several regions",
+  "next_step": "ask the key owner if they use it from these countries, if not rotate it"
+}
+```
+
+No raw emails or prompts end up in it, only the ids and hashes already in your logs.
+
 ### Bad rows
 
 luxvigil stops at the first row it can't trust (a cost of `nan` or `-5`, negative tokens, an empty account id…) and tells you which line, rather than quietly getting the totals wrong. If your export has a few broken rows and you just want the rest, add `--skip-bad-rows` and it'll tell you how many it skipped. It also warns you about duplicated rows and rows without a valid IP.
@@ -136,6 +157,7 @@ $ luxvigil generate --out sample-logs.csv
 - [x] Copy-paste bots
 - [x] Spend spikes
 - [x] Terminal report (with a total that counts each account once)
+- [x] JSON output
 - [ ] HTML report (v0.2)
 - [ ] Read LiteLLM / Helicone / gateway exports directly (v0.3)
 
