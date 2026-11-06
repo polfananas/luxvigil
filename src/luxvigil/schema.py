@@ -3,6 +3,7 @@
 import csv
 import ipaddress
 import math
+from functools import lru_cache
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -71,6 +72,16 @@ def _parse_time(value):
     if number > 1e11:  # milliseconds
         number /= 1000
     return datetime.fromtimestamp(number, tz=timezone.utc)
+
+
+@lru_cache(maxsize=1 << 16)
+def _valid_ip(ip):
+    # the same IPs show up over and over, so parse each one once
+    try:
+        ipaddress.ip_address(ip)
+        return True
+    except ValueError:
+        return False
 
 
 def _tokens(value, name):
@@ -196,9 +207,7 @@ def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None, ski
             if fingerprint in seen:
                 duplicates += 1
             seen.add(fingerprint)
-            try:
-                ipaddress.ip_address(rows[-1].ip)
-            except ValueError:
+            if not _valid_ip(rows[-1].ip):
                 bad_ips += 1
 
     # these don't stop the scan, but you should know about them
