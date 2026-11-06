@@ -35,13 +35,15 @@ def test_total_matches_what_was_planted(sample):
     victim = next(r for r in rows if r["api_key_id"] == leak)
     owner_device = victim["device_id"]  # the owner's first request comes before the leak
 
-    planted_cost = sum(r["cost_usd"] for r in rows if r["account_id"] in farm)
+    likely = sum(r["cost_usd"] for r in rows if r["account_id"] in farm)
     # leaked requests come from random devices, the owner always uses the same one
-    planted_cost += sum(r["cost_usd"] for r in rows if r["api_key_id"] == leak and r["device_id"] != owner_device)
+    likely += sum(r["cost_usd"] for r in rows if r["api_key_id"] == leak and r["device_id"] != owner_device)
     # spike requests are way bigger than anything a normal user sends (> $0.035 each)
-    planted_cost += sum(r["cost_usd"] for r in rows if r["account_id"] == spiker and r["cost_usd"] > 0.035)
+    spike = sum(r["cost_usd"] for r in rows if r["account_id"] == spiker and r["cost_usd"] > 0.035)
 
-    assert report.abuse_cost == pytest.approx(planted_cost, rel=0.02)
+    assert report.abuse_cost == pytest.approx(likely, rel=0.02)
+    # a spike on its own could be a launch, so it's only worth a look
+    assert report.review_cost == pytest.approx(spike, rel=0.02)
 
 
 def test_total_is_not_the_sum_of_the_checks(sample):
@@ -61,8 +63,8 @@ def test_flagged_accounts(sample):
     rows, planted, report = sample
     leak = planted["shared_key"][0]
     victim = next(r["account_id"] for r in rows if r["api_key_id"] == leak)
-    expected = set(planted["farm_big"]) | set(planted["farm_device"]) | set(planted["spike"]) | {victim}
-    assert report.flagged_accounts == expected
+    assert report.flagged_accounts == set(planted["farm_big"]) | set(planted["farm_device"]) | {victim}
+    assert report.review_accounts == set(planted["spike"])
 
 
 def test_clean_logs():
@@ -88,3 +90,27 @@ def test_spike_on_top_of_a_leak_isnt_counted_twice():
     report = build_report(rows)
     assert report.keys and report.spikes
     assert report.abuse_cost == pytest.approx(5.0)  # the leak, not leak + spike
+
+
+def test_throwaway_email_alone_is_only_worth_a_look():
+    rows = [req(f"u{i}", day=d, cost=1.0) for i in range(9) for d in range(3)]
+    rows += [req("dev", day=d, cost=1.0, email="dev@mailinator.com") for d in range(3)]
+    report = build_report(rows)
+    assert report.abuse_cost == 0
+    assert report.review_cost == pytest.approx(3.0)
+    assert report.review_accounts == {"dev"}
+
+
+def test_strong_signal_wins_over_weak():
+    # throwaway emails AND template prompts: likely abuse, not double counted in review
+    rows = [req(f"bot{i}", day=d, cost=1.0, email=f"bot{i}@mailinator.com", prompt="template")
+            for i in range(5) for d in range(3)]
+    report = build_report(rows)
+    assert report.abuse_cost == pytest.approx(15.0)
+    assert report.review_cost == 0
+    assert report.review_accounts == set()
+
+
+def test_buckets_never_exceed_total_spend(sample):
+    _, _, report = sample
+    assert report.abuse_cost + report.review_cost <= report.total_cost + 1e-9

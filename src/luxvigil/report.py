@@ -1,14 +1,20 @@
 """Runs every check and puts the results together into one report.
 
-The tricky part is the total. The same account often trips several checks
-(a farm account usually also has a throwaway email and sends template prompts),
-so adding up each check's cost would count it two or three times.
-Instead we mark each abusive request once and add those up:
+Two totals, never mixed up:
 
-  - farms, throwaway emails, copy-paste bots: every request from those accounts
-  - shared keys: the requests from outside the key's home country
-  - spend spikes: the extra over the usual on spike days, minus whatever
-    from that same day is already counted by another check
+  likely abuse    strong signals that rarely have an innocent explanation
+                  - farms and copy-paste bots: every request from those accounts
+                  - shared keys: the requests from outside the key's home country
+
+  worth a look    weak signals that often do have one
+                  - a throwaway email on its own (devs testing, privacy nerds)
+                  - spend spikes (a launch, a batch job, a big customer)
+                  An account with a weak signal that also trips a strong one
+                  just counts as likely abuse.
+
+The same account often trips several checks, so every request is counted
+once, in the stronger bucket it belongs to. Spikes only add the extra over the
+usual, minus whatever from that day is already counted.
 """
 
 from collections import defaultdict
@@ -29,8 +35,10 @@ class Report:
     keys: list = field(default_factory=list)
     bots: list = field(default_factory=list)
     spikes: list = field(default_factory=list)
-    abuse_cost: float = 0.0  # deduplicated
-    flagged_accounts: set = field(default_factory=set)
+    abuse_cost: float = 0.0  # likely abuse, deduplicated
+    review_cost: float = 0.0  # worth a look, not counted in abuse_cost
+    flagged_accounts: set = field(default_factory=set)  # likely abuse
+    review_accounts: set = field(default_factory=set)  # worth a look only
     ignored_accounts: int = 0  # left out because of luxvigil.toml
     config_path: str = ""
 
@@ -61,24 +69,27 @@ def build_report(rows, min_farm=5, min_countries=5, config=None):
         spikes=find_spikes(rows),
     )
 
-    # accounts whose whole traffic counts as abuse
-    whole = set()
+    strong = set()  # accounts whose whole traffic counts as likely abuse
     for farm in report.farms:
-        whole.update(farm.accounts)
+        strong.update(farm.accounts)
     for bot in report.bots:
-        whole.update(bot.accounts)
-    if report.emails:
-        whole.update(report.emails.accounts)
+        strong.update(bot.accounts)
+    weak = set(report.emails.accounts) - strong if report.emails else set()
 
     away = {k.key: k.home_country for k in report.keys}
+    key_accounts = {a for k in report.keys for a in k.accounts}
 
-    counted = 0.0
-    counted_on_day = defaultdict(float)  # (account, day) -> already counted
+    likely = review = 0.0
+    counted_on_day = defaultdict(float)  # (account, day) -> already counted, either bucket
     for r in rows:
         home = away.get(r.api_key_id)
-        if r.account_id in whole or (home is not None and r.country != home):
-            counted += r.cost_usd
-            counted_on_day[(r.account_id, r.timestamp.date())] += r.cost_usd
+        day = (r.account_id, r.timestamp.date())
+        if r.account_id in strong or (home is not None and r.country != home):
+            likely += r.cost_usd
+            counted_on_day[day] += r.cost_usd
+        elif r.account_id in weak:
+            review += r.cost_usd
+            counted_on_day[day] += r.cost_usd
 
     spend_on_day = defaultdict(float)
     spike_accounts = {s.account for s in report.spikes}
@@ -89,16 +100,14 @@ def build_report(rows, min_farm=5, min_countries=5, config=None):
     for s in report.spikes:
         for day in s.days:
             extra = spend_on_day[(s.account, day)] - s.usual_daily
-            counted += max(0.0, extra - counted_on_day[(s.account, day)])
+            review += max(0.0, extra - counted_on_day[(s.account, day)])
 
-    report.abuse_cost = counted
+    report.abuse_cost = likely
+    report.review_cost = review
+    report.flagged_accounts = strong | key_accounts
+    report.review_accounts = (weak | spike_accounts) - report.flagged_accounts
     report.ignored_accounts = report.accounts - len({r.account_id for r in rows})
     report.config_path = config.path if config else ""
-    report.flagged_accounts = (
-        whole
-        | {a for k in report.keys for a in k.accounts}
-        | spike_accounts
-    )
     return report
 
 
