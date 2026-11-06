@@ -15,7 +15,7 @@ def test_scan_missing_file_fails(tmp_path, capsys):
 def test_demo(capsys):
     assert main(["demo"]) == 0
     out = capsys.readouterr().out
-    assert "looks like abuse" in out
+    assert "is likely abuse" in out
     assert "2 account farms" in out
     assert "try it on yours" in out
 

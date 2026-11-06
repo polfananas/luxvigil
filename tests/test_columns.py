@@ -100,6 +100,6 @@ def test_timestamps():
 def test_cli_map(sample, capsys):
     assert main(["scan", str(sample / "theirs.csv"), "--price-in", "3", "--price-out", "15"]) == 0
     captured = capsys.readouterr()
-    assert "looks like abuse" in captured.out
+    assert "is likely abuse" in captured.out
     assert "note: using 'user_email' as email" in captured.err
     assert main(["scan", str(sample / "theirs.csv"), "--map", "nonsense"]) == 1
