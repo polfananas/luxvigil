@@ -30,7 +30,8 @@ $ luxvigil demo
 🕯️ luxvigil · 2026-10-01 to 2026-10-30
 
   11,405 requests · 285 accounts · $324.60 spent
-  💰 ~$218.01 looks like abuse (67% of your spend), 87 accounts involved
+  💰 ~$195.25 is likely abuse (60% of your spend), 86 accounts
+  🔎 ~$22.76 more is worth a look, 1 account (signals that can have an innocent explanation)
 
   🚨 2 account farms, 85 accounts
      - 60 accounts on 3 shared devices + 1 shared network (185.220.101.0/24)  ·  3,368 requests  ·  ~$144.89
@@ -41,11 +42,11 @@ $ luxvigil demo
      - key key_eb500b7a7780b4c2: 13 countries in a single day, 401 IPs, home is GB  ·  400 requests from abroad  ·  ~$17.97
   🤖 1 copy-paste bot, 60 accounts
      - 60 accounts sending the same 5 prompts over and over (3,368 times)  ·  3,368 requests  ·  ~$144.89
-  💸 2 spend spikes
+  💸 2 spend spikes (could be a launch or a batch job, check first)
      - acc_0100 went from ~$0.02/day to $7.99/day (368x) on 2026-10-28 to 2026-10-30  ·  302 requests  ·  ~$22.76 extra
      - acc_0007 went from ~$0.02/day to $6.26/day (266x) on 2026-10-23 to 2026-10-25  ·  402 requests  ·  ~$17.93 extra
 
-  The same account can show up in more than one check. The total at the top counts it once.
+  The same account can show up in more than one check. The totals at the top count it once.
 ```
 
 The checks:
@@ -57,6 +58,8 @@ The checks:
 - **Spend spikes**: a user suddenly burning 10x their usual
 
 Every flag tells you *why* it fired. No black box.
+
+The report keeps two totals apart. **Likely abuse** is what comes from strong signals: farms, copy-paste bots and keys used from all over the world. **Worth a look** is for weak signals that often have an innocent explanation, like a throwaway email on its own (someone testing) or a spend spike (a launch, a batch job). An account that trips both just counts as likely abuse, and nothing is counted twice.
 
 ## What it won't do
 
