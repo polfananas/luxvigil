@@ -154,7 +154,7 @@ On fake logs, on a small 2-core cloud box with Python 3.13 (`python scripts/benc
 | requests | time | peak memory |
 |---:|---:|---:|
 | 10k | 0.1s | ~30 MB |
-| 100k | 1.1s | ~120 MB |
+| 100k | 1.2s | ~90 MB |
 | 1M | 18s | ~740 MB |
 
 About half of that is just reading the CSV. Everything is loaded into memory, so tens of millions of rows will need a big machine or splitting the file by month. Run the script on your own machine to get your numbers.
