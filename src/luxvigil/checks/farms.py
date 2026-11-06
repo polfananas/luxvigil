@@ -20,6 +20,7 @@ Plain rule, no scoring: every farm lists the devices and networks that tied it t
 import ipaddress
 from collections import defaultdict
 from dataclasses import dataclass, field
+from functools import lru_cache
 
 from luxvigil.checks.emails import disposable_domain, load_disposable_domains
 from luxvigil.checks.groups import Groups
@@ -50,6 +51,7 @@ class Farm:
         return f"{len(self.accounts)} accounts on " + " + ".join(bits)
 
 
+@lru_cache(maxsize=1 << 16)
 def network_of(ip):
     """'185.220.101.7' -> '185.220.101.0/24'. IPv6 goes to /64. Junk -> None."""
     try:
@@ -63,7 +65,10 @@ def network_of(ip):
 def suspect_accounts(requests, bots=None):
     """Accounts that look off on their own: throwaway email, or part of a copy-paste bot."""
     domains = load_disposable_domains()
-    out = {r.account_id for r in requests if disposable_domain(r.email, domains)}
+    first_email = {}
+    for r in requests:
+        first_email.setdefault(r.account_id, r.email)
+    out = {acc for acc, email in first_email.items() if disposable_domain(email, domains)}
     for bot in find_prompt_bots(requests) if bots is None else bots:
         out.update(bot.accounts)
     return out

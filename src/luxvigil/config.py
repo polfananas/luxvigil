@@ -40,8 +40,14 @@ class Config:
     ignore_emails: list = field(default_factory=list)
     ignore_keys: list = field(default_factory=list)
     path: str = ""
+    _ip_cache: dict = field(default_factory=dict, repr=False, compare=False)
 
     def trusts_ip(self, ip):
+        if ip not in self._ip_cache:
+            self._ip_cache[ip] = self._trusts_ip(ip)
+        return self._ip_cache[ip]
+
+    def _trusts_ip(self, ip):
         try:
             addr = ipaddress.ip_address(ip.strip())
         except ValueError:

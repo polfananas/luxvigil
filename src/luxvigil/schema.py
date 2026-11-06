@@ -3,6 +3,7 @@
 import csv
 import ipaddress
 import math
+from functools import lru_cache
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -41,7 +42,7 @@ ALIASES = {
 }
 
 
-@dataclass
+@dataclass(slots=True)
 class Request:
     timestamp: datetime
     account_id: str
@@ -71,6 +72,16 @@ def _parse_time(value):
     if number > 1e11:  # milliseconds
         number /= 1000
     return datetime.fromtimestamp(number, tz=timezone.utc)
+
+
+@lru_cache(maxsize=1 << 16)
+def _valid_ip(ip):
+    # the same IPs show up over and over, so parse each one once
+    try:
+        ipaddress.ip_address(ip)
+        return True
+    except ValueError:
+        return False
 
 
 def _tokens(value, name):
@@ -156,6 +167,12 @@ def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None, ski
 
         rows = []
         seen, duplicates, bad_ips = set(), 0, 0
+        # the same account, email, key, IP... repeat on thousands of rows: keep one copy of each string
+        shared = {}
+
+        def one(value):
+            return shared.setdefault(value, value)
+
         skipped, first_error = 0, None
         for line, r in enumerate(reader, start=2):
             try:
@@ -172,13 +189,13 @@ def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None, ski
                 rows.append(
                     Request(
                         timestamp=_parse_time(r[cols["timestamp"]]),
-                        account_id=r[cols["account_id"]],
-                        email=r[cols["email"]].strip().lower(),
-                        api_key_id=r[cols["api_key_id"]],
-                        ip=r[cols["ip"]].strip(),
-                        country=r[cols["country"]].strip().upper(),
-                        device_id=(r.get(cols["device_id"]) or "") if "device_id" in cols else "",
-                        prompt_hash=r[cols["prompt_hash"]],
+                        account_id=one(r[cols["account_id"]]),
+                        email=one(r[cols["email"]].strip().lower()),
+                        api_key_id=one(r[cols["api_key_id"]]),
+                        ip=one(r[cols["ip"]].strip()),
+                        country=one(r[cols["country"]].strip().upper()),
+                        device_id=one(r.get(cols["device_id"]) or "") if "device_id" in cols else "",
+                        prompt_hash=one(r[cols["prompt_hash"]]),
                         input_tokens=tin,
                         output_tokens=tout,
                         cost_usd=cost,
@@ -191,13 +208,12 @@ def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None, ski
                 first_error = first_error or f"line {line}: {e}"
                 continue
 
-            fingerprint = tuple(r.values())
+            # only keep a hash of each row, keeping the rows themselves doubles memory on big files
+            fingerprint = hash(tuple(r.values()))
             if fingerprint in seen:
                 duplicates += 1
             seen.add(fingerprint)
-            try:
-                ipaddress.ip_address(rows[-1].ip)
-            except ValueError:
+            if not _valid_ip(rows[-1].ip):
                 bad_ips += 1
 
     # these don't stop the scan, but you should know about them
