@@ -5,9 +5,14 @@ Each account on its own looks fine. The giveaway is what they share:
   - the same device (device_id), even if they hop between IPs and countries
   - the same network (same /24 for IPv4, same /64 for IPv6)
 
-Two accounts are linked if they share either one. Linked accounts get grouped
-(if A shares a device with B and B shares a network with C, that's one group),
-and a group is flagged as a farm once it has `min_accounts` or more.
+A shared device is enough to link two accounts. A shared network isn't:
+mobile carriers, universities and big offices put thousands of real people
+behind a handful of IPs. So a network only links accounts that already look
+off on their own (a throwaway email, or sending the same prompts as others).
+
+Linked accounts get grouped (if A shares a device with B and B shares a
+network with C, that's one group), and a group is flagged as a farm once it
+has `min_accounts` or more.
 
 Plain rule, no scoring: every farm lists the devices and networks that tied it together.
 """
@@ -16,7 +21,9 @@ import ipaddress
 from collections import defaultdict
 from dataclasses import dataclass, field
 
+from luxvigil.checks.emails import disposable_domain, load_disposable_domains
 from luxvigil.checks.groups import Groups
+from luxvigil.checks.prompts import find_prompt_bots
 
 
 @dataclass
@@ -39,7 +46,7 @@ class Farm:
         if self.networks:
             n = len(self.networks)
             nets = ", ".join(self.networks[:2]) + ("…" if n > 2 else "")
-            bits.append(f"{n} shared network{'s' if n > 1 else ''} ({nets})")
+            bits.append(f"{n} shared network{'s' if n > 1 else ''} ({nets}, with throwaway emails or template prompts)")
         return f"{len(self.accounts)} accounts on " + " + ".join(bits)
 
 
@@ -53,17 +60,28 @@ def network_of(ip):
     return str(ipaddress.ip_network(f"{addr}/{prefix}", strict=False))
 
 
-def find_farms(requests, min_accounts=5, config=None):
+def suspect_accounts(requests, bots=None):
+    """Accounts that look off on their own: throwaway email, or part of a copy-paste bot."""
+    domains = load_disposable_domains()
+    out = {r.account_id for r in requests if disposable_domain(r.email, domains)}
+    for bot in find_prompt_bots(requests) if bots is None else bots:
+        out.update(bot.accounts)
+    return out
+
+
+def find_farms(requests, min_accounts=5, config=None, suspects=None):
     """Return the farms found in `requests`, biggest cost first.
 
     Devices and networks trusted in the config never link accounts.
+    `suspects` lets the caller pass suspect_accounts() if it already has it.
     """
+    suspects = suspect_accounts(requests) if suspects is None else suspects
     by_device = defaultdict(set)
     by_network = defaultdict(set)
     for r in requests:
         if r.device_id and not (config and r.device_id in config.trusted_devices):
             by_device[r.device_id].add(r.account_id)
-        if config and config.trusts_ip(r.ip):
+        if r.account_id not in suspects or (config and config.trusts_ip(r.ip)):
             continue
         net = network_of(r.ip)
         if net:
