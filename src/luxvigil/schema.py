@@ -167,6 +167,12 @@ def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None, ski
 
         rows = []
         seen, duplicates, bad_ips = set(), 0, 0
+        # the same account, email, key, IP... repeat on thousands of rows: keep one copy of each string
+        shared = {}
+
+        def one(value):
+            return shared.setdefault(value, value)
+
         skipped, first_error = 0, None
         for line, r in enumerate(reader, start=2):
             try:
@@ -183,13 +189,13 @@ def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None, ski
                 rows.append(
                     Request(
                         timestamp=_parse_time(r[cols["timestamp"]]),
-                        account_id=r[cols["account_id"]],
-                        email=r[cols["email"]].strip().lower(),
-                        api_key_id=r[cols["api_key_id"]],
-                        ip=r[cols["ip"]].strip(),
-                        country=r[cols["country"]].strip().upper(),
-                        device_id=(r.get(cols["device_id"]) or "") if "device_id" in cols else "",
-                        prompt_hash=r[cols["prompt_hash"]],
+                        account_id=one(r[cols["account_id"]]),
+                        email=one(r[cols["email"]].strip().lower()),
+                        api_key_id=one(r[cols["api_key_id"]]),
+                        ip=one(r[cols["ip"]].strip()),
+                        country=one(r[cols["country"]].strip().upper()),
+                        device_id=one(r.get(cols["device_id"]) or "") if "device_id" in cols else "",
+                        prompt_hash=one(r[cols["prompt_hash"]]),
                         input_tokens=tin,
                         output_tokens=tout,
                         cost_usd=cost,
