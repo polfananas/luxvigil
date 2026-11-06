@@ -7,10 +7,10 @@ from luxvigil.generate import generate, write_csv
 from luxvigil.schema import Request, load_logs
 
 
-def req(account, ip="1.2.3.4", device="", cost=0.01):
+def req(account, ip="1.2.3.4", device="", cost=0.01, email=None):
     return Request(
         timestamp=datetime(2026, 10, 1, tzinfo=timezone.utc),
-        account_id=account, email=f"{account}@example.com", api_key_id=f"key_{account}",
+        account_id=account, email=email or f"{account}@example.com", api_key_id=f"key_{account}",
         ip=ip, country="US", device_id=device, prompt_hash="p",
         input_tokens=10, output_tokens=10, cost_usd=cost,
     )
@@ -53,9 +53,9 @@ def test_small_group_is_not_a_farm():
 
 
 def test_links_chain_across_device_and_network():
-    # a,b share a device; b,c,d,e share a network -> one farm of 5
-    rows = [req("a", ip="9.9.9.9", device="d1"), req("b", ip="5.5.5.1", device="d1")]
-    rows += [req(x, ip=f"5.5.5.{i + 2}") for i, x in enumerate("cde")]
+    # a,b share a device; b,c,d,e share a network (and all look off) -> one farm of 5
+    rows = [req("a", ip="9.9.9.9", device="d1"), req("b", ip="5.5.5.1", device="d1", email="b@mailinator.com")]
+    rows += [req(x, ip=f"5.5.5.{i + 2}", email=f"{x}@mailinator.com") for i, x in enumerate("cde")]
     (farm,) = find_farms(rows)
     assert farm.accounts == ["a", "b", "c", "d", "e"]
     assert farm.devices == ["d1"] and farm.networks == ["5.5.5.0/24"]
@@ -70,3 +70,24 @@ def test_network_of():
     assert network_of("185.220.101.7") == "185.220.101.0/24"
     assert network_of("2001:db8::1") == "2001:db8::/64"
     assert network_of("not an ip") is None
+
+
+def test_mobile_carrier_is_not_a_farm():
+    # 20 normal people behind the same carrier range: sharing a network proves nothing
+    rows = [req(f"m{i}", ip=f"85.50.10.{i + 2}") for i in range(20)]
+    assert find_farms(rows) == []
+
+
+def test_shared_network_plus_throwaway_emails_is_a_farm():
+    rows = [req(f"m{i}", ip=f"85.50.10.{i + 2}", email=f"m{i}@mailinator.com") for i in range(6)]
+    (farm,) = find_farms(rows)
+    assert farm.networks == ["85.50.10.0/24"]
+    assert "throwaway emails" in farm.why
+
+
+def test_only_the_suspicious_ones_on_a_network_get_linked():
+    # a carrier range with 20 real users and 5 throwaway signups: only the 5 are the farm
+    rows = [req(f"m{i}", ip=f"85.50.10.{i + 2}") for i in range(20)]
+    rows += [req(f"x{i}", ip=f"85.50.10.{i + 100}", email=f"x{i}@mailinator.com") for i in range(5)]
+    (farm,) = find_farms(rows)
+    assert farm.accounts == [f"x{i}" for i in range(5)]

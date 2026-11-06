@@ -21,6 +21,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 
 from luxvigil.checks import find_disposable_emails, find_farms, find_prompt_bots, find_shared_keys, find_spikes
+from luxvigil.checks.farms import suspect_accounts
 
 
 @dataclass
@@ -56,16 +57,17 @@ def build_report(rows, min_farm=5, min_countries=5, config=None):
     if config:
         rows = [r for r in rows if not config.ignores(r)]
 
+    bots = find_prompt_bots(rows)
     report = Report(
         requests=len(all_rows),
         accounts=len({r.account_id for r in all_rows}),
         total_cost=sum(r.cost_usd for r in all_rows),
         first_seen=min((r.timestamp for r in all_rows), default=None),
         last_seen=max((r.timestamp for r in all_rows), default=None),
-        farms=find_farms(rows, min_accounts=min_farm, config=config),
+        farms=find_farms(rows, min_accounts=min_farm, config=config, suspects=suspect_accounts(rows, bots)),
         emails=find_disposable_emails(rows),
         keys=find_shared_keys(rows, min_countries=min_countries),
-        bots=find_prompt_bots(rows),
+        bots=bots,
         spikes=find_spikes(rows),
     )
 

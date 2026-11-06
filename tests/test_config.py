@@ -89,8 +89,11 @@ def office(n=20):
     return rows
 
 
-def test_office_network_looks_like_a_farm_until_you_trust_it():
+def test_trusted_network_never_links():
+    # even throwaway signups don't get linked through a network you trust
     rows = office()
+    for r in rows:
+        r.email = f"{r.account_id}@mailinator.com"
     assert len(find_farms(rows)) == 1
     cfg = Config(trusted_networks=[ipaddress.ip_network("203.0.113.0/24")])
     assert find_farms(rows, config=cfg) == []
