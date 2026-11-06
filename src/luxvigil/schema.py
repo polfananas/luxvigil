@@ -41,7 +41,7 @@ ALIASES = {
 }
 
 
-@dataclass
+@dataclass(slots=True)
 class Request:
     timestamp: datetime
     account_id: str
@@ -191,7 +191,8 @@ def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None, ski
                 first_error = first_error or f"line {line}: {e}"
                 continue
 
-            fingerprint = tuple(r.values())
+            # only keep a hash of each row, keeping the rows themselves doubles memory on big files
+            fingerprint = hash(tuple(r.values()))
             if fingerprint in seen:
                 duplicates += 1
             seen.add(fingerprint)
