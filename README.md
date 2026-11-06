@@ -34,7 +34,7 @@ $ luxvigil demo
   🔎 ~$22.76 more is worth a look, 1 account (signals that can have an innocent explanation)
 
   🚨 2 account farms, 85 accounts
-     - 60 accounts on 3 shared devices + 1 shared network (185.220.101.0/24)  ·  3,368 requests  ·  ~$144.89
+     - 60 accounts on 3 shared devices + 1 shared network (185.220.101.0/24, with throwaway emails or template prompts)  ·  3,368 requests  ·  ~$144.89
      - 25 accounts on 1 shared device  ·  968 requests  ·  ~$32.39
   📧 60 of 285 accounts (21%) use throwaway emails: mailinator.com (16), sharklasers.com (12), 10minutemail.com (12)
      3,368 requests  ·  ~$144.89
@@ -51,7 +51,7 @@ $ luxvigil demo
 
 The checks:
 
-- **Account farms**: lots of accounts coming from the same IP, network or device
+- **Account farms**: lots of accounts on the same device, or on the same network when they also use throwaway emails or template prompts (a shared network alone proves nothing: think mobile carriers and universities)
 - **Disposable emails**: signups from mailinator & friends
 - **Shared / leaked keys**: one key used from many countries in a short window (often a sign it's been stolen and resold)
 - **Copy-paste bots**: different accounts sending the same prompts or templates
