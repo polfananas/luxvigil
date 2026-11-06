@@ -111,7 +111,7 @@ Want to feed it into something else? `--json` prints the same report as data. Ev
   "summary": "key key_eb500b7a7780b4c2: 13 countries in a single day, 401 IPs, home is GB",
   "accounts": ["acc_0007"],
   "requests": 400,
-  "cost_usd": 17.9744,
+  "cost_usd": 17.9693,
   "evidence": {"key": "key_eb500b7a7780b4c2", "home_country": "GB", "peak_countries_in_a_day": 13, "...": "..."},
   "innocent_explanation": "a customer running the same key from servers in several regions",
   "next_step": "ask the key owner if they use it from these countries, if not rotate it"
