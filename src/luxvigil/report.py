@@ -135,10 +135,18 @@ def render_text(report):
         out.append("  ✅ nothing suspicious found")
         return out
 
-    out.append(
-        f"  💰 ~${report.abuse_cost:,.2f} looks like abuse ({report.abuse_share:.0%} of your spend), "
-        f"{_plural(len(report.flagged_accounts), 'account')} involved"
-    )
+    if report.abuse_cost or report.flagged_accounts:
+        out.append(
+            f"  💰 ~${report.abuse_cost:,.2f} is likely abuse ({report.abuse_share:.0%} of your spend), "
+            f"{_plural(len(report.flagged_accounts), 'account')}"
+        )
+    else:
+        out.append("  💰 nothing that looks like clear abuse")
+    if report.review_accounts:
+        out.append(
+            f"  🔎 ~${report.review_cost:,.2f} more is worth a look, {_plural(len(report.review_accounts), 'account')} "
+            "(signals that can have an innocent explanation)"
+        )
     out.append("")
 
     if report.farms:
@@ -153,6 +161,9 @@ def render_text(report):
         e = report.emails
         out.append(f"  📧 {e.why}")
         out.append(f"     {e.requests:,} requests  ·  ~${e.cost_usd:,.2f}")
+        alone = len(set(e.accounts) & report.review_accounts)
+        if alone:
+            out.append(f"     {_plural(alone, 'account')} with no other red flag, could just be people testing")
     else:
         out.append("  ✅ no disposable emails")
 
@@ -172,12 +183,12 @@ def render_text(report):
         out.append("  ✅ no copy-paste bots")
 
     if report.spikes:
-        out.append(f"  💸 {_plural(len(report.spikes), 'spend spike')}")
+        out.append(f"  💸 {_plural(len(report.spikes), 'spend spike')} (could be a launch or a batch job, check first)")
         for s in report.spikes:
             out.append(f"     - {s.why}  ·  {s.requests:,} requests  ·  ~${s.cost_usd:,.2f} extra")
     else:
         out.append("  ✅ no spend spikes")
 
     out.append("")
-    out.append("  The same account can show up in more than one check. The total at the top counts it once.")
+    out.append("  The same account can show up in more than one check. The totals at the top count it once.")
     return out
