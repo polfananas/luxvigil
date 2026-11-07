@@ -1,6 +1,9 @@
+import json
 from datetime import datetime, timezone
 
 from luxvigil.checks.aliases import find_gmail_aliases, gmail_inbox
+from luxvigil.export import to_dict
+from luxvigil.report import build_report
 from luxvigil.schema import Request
 
 
@@ -51,3 +54,16 @@ def test_the_inbox_never_shows_up_in_the_text():
     rows = [req(f"a{i}", f"pol+{i}@gmail.com") for i in range(3)]
     (group,) = find_gmail_aliases(rows)
     assert "pol" not in group.why and "@" not in group.why
+
+
+def test_report_counts_them_as_likely_abuse():
+    rows = [req(f"a{i}", f"pol+{i}@gmail.com") for i in range(4)]
+    rows += [req(f"u{i}", f"user{i}@gmail.com") for i in range(10)]
+    report = build_report(rows)
+    assert report.abuse_cost == 4.0
+    assert report.flagged_accounts == {"a0", "a1", "a2", "a3"}
+
+    data = to_dict(report)
+    (finding,) = [f for f in data["findings"] if f["check"] == "gmail_aliases"]
+    assert finding["severity"] == "likely"
+    assert "@" not in json.dumps(data)  # no emails leak into the json
