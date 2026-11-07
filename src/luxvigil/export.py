@@ -20,6 +20,7 @@ INNOCENT = {
     "shared_key": "a customer running the same key from servers in several regions",
     "copy_paste_bot": "a legit integration sending a fixed template for its users",
     "spend_spike": "a launch, a batch job or a customer that just started using you for real",
+    "gmail_aliases": "one person with a couple of test accounts, or a small team sharing an inbox",
 }
 
 NEXT = {
@@ -28,6 +29,7 @@ NEXT = {
     "shared_key": "ask the key owner if they use it from these countries, if not rotate it",
     "copy_paste_bot": "look at the prompt behind the hash and when these accounts signed up",
     "spend_spike": "ask the account owner, or check what the requests on those days were",
+    "gmail_aliases": "check if these accounts were used one after another to stretch the free credits",
 }
 
 
@@ -68,6 +70,12 @@ def to_dict(report, notes=()):
             "copy_paste_bot", "likely", b.why, b.accounts, b.requests, b.cost_usd,
             {"prompt_hashes": b.prompts, "repeats": b.repeats},
             *sorted(b.accounts),
+        ))
+    for g in report.aliases:
+        findings.append(_finding(
+            "gmail_aliases", "likely", g.why, g.accounts, g.requests, g.cost_usd,
+            {"spellings_used": g.addresses},
+            *sorted(g.accounts),
         ))
     for k in report.keys:
         findings.append(_finding(

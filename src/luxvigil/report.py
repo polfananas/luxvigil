@@ -5,6 +5,7 @@ Two totals, never mixed up:
   likely abuse    strong signals that rarely have an innocent explanation
                   - farms and copy-paste bots: every request from those accounts
                   - shared keys: the requests from outside the key's home country
+                  - gmail aliases: every request from accounts sharing one inbox
 
   worth a look    weak signals that often do have one
                   - a throwaway email on its own (devs testing, privacy nerds)
@@ -21,6 +22,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 
 from luxvigil.checks import find_disposable_emails, find_farms, find_prompt_bots, find_shared_keys, find_spikes
+from luxvigil.checks.aliases import find_gmail_aliases
 from luxvigil.checks.farms import suspect_accounts
 
 
@@ -36,6 +38,7 @@ class Report:
     keys: list = field(default_factory=list)
     bots: list = field(default_factory=list)
     spikes: list = field(default_factory=list)
+    aliases: list = field(default_factory=list)
     abuse_cost: float = 0.0  # likely abuse, deduplicated
     review_cost: float = 0.0  # worth a look, not counted in abuse_cost
     flagged_accounts: set = field(default_factory=set)  # likely abuse
@@ -49,7 +52,7 @@ class Report:
 
     @property
     def clean(self):
-        return not (self.farms or self.emails or self.keys or self.bots or self.spikes)
+        return not (self.farms or self.emails or self.keys or self.bots or self.spikes or self.aliases)
 
 
 def build_report(rows, min_farm=5, min_countries=5, config=None):
@@ -69,6 +72,7 @@ def build_report(rows, min_farm=5, min_countries=5, config=None):
         keys=find_shared_keys(rows, min_countries=min_countries),
         bots=bots,
         spikes=find_spikes(rows),
+        aliases=find_gmail_aliases(rows),
     )
 
     strong = set()  # accounts whose whole traffic counts as likely abuse
@@ -76,6 +80,8 @@ def build_report(rows, min_farm=5, min_countries=5, config=None):
         strong.update(farm.accounts)
     for bot in report.bots:
         strong.update(bot.accounts)
+    for group in report.aliases:
+        strong.update(group.accounts)
     weak = set(report.emails.accounts) - strong if report.emails else set()
 
     away = {k.key: k.home_country for k in report.keys}
@@ -183,6 +189,15 @@ def render_text(report):
             out.append(f"     - {b.why}  ·  {b.requests:,} requests  ·  ~${b.cost_usd:,.2f}")
     else:
         out.append("  ✅ no copy-paste bots")
+
+    if report.aliases:
+        n = sum(len(g.accounts) for g in report.aliases)
+        inboxes = len(report.aliases)
+        out.append(f"  📮 {inboxes} shared Gmail inbox{'es' if inboxes > 1 else ''}, {n} accounts")
+        for g in report.aliases:
+            out.append(f"     - {g.why}  ·  {g.requests:,} requests  ·  ~${g.cost_usd:,.2f}")
+    else:
+        out.append("  ✅ no shared Gmail inboxes")
 
     if report.spikes:
         out.append(f"  💸 {_plural(len(report.spikes), 'spend spike')} (could be a launch or a batch job, check first)")

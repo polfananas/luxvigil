@@ -8,7 +8,7 @@
 
 luxvigil reads the request logs of your AI API (or any app that gives away tokens or credits) and shows you the abuse hiding in them: account farms, throwaway emails, shared or leaked keys, bots sending the same prompts over and over… and roughly how much it cost you.
 
-> ⚠️ Early days. All 5 checks and the terminal report work. I'm building it in the open step by step, so star or watch if you want to follow along.
+> ⚠️ Early days. All the checks and the terminal report work. I'm building it in the open step by step, so star or watch if you want to follow along.
 >
 > There's no license yet, so for now it's look but don't use. That'll change before v0.1.
 
@@ -42,6 +42,7 @@ $ luxvigil demo
      - key key_eb500b7a7780b4c2: 13 countries in a single day, 401 IPs, home is GB  ·  400 requests from abroad  ·  ~$17.97
   🤖 1 copy-paste bot, 60 accounts
      - 60 accounts sending the same 5 prompts over and over (3,368 times)  ·  3,368 requests  ·  ~$144.89
+  ✅ no shared Gmail inboxes
   💸 2 spend spikes (could be a launch or a batch job, check first)
      - acc_0100 went from ~$0.02/day to $7.99/day (368x) on 2026-10-28 to 2026-10-30  ·  302 requests  ·  ~$22.76 extra
      - acc_0007 went from ~$0.02/day to $6.26/day (266x) on 2026-10-23 to 2026-10-25  ·  402 requests  ·  ~$17.93 extra
@@ -55,11 +56,12 @@ The checks:
 - **Disposable emails**: signups from mailinator & friends
 - **Shared / leaked keys**: one key used from many countries in a short window (often a sign it's been stolen and resold)
 - **Copy-paste bots**: different accounts sending the same prompts or templates
+- **Gmail aliases**: three or more accounts on the same Gmail inbox (`you+1@gmail.com`, `y.o.u@gmail.com`…), the classic way to get lots of free trials with one inbox
 - **Spend spikes**: a user suddenly burning 10x their usual
 
 Every flag tells you *why* it fired. No black box.
 
-The report keeps two totals apart. **Likely abuse** is what comes from strong signals: farms, copy-paste bots and keys used from all over the world. **Worth a look** is for weak signals that often have an innocent explanation, like a throwaway email on its own (someone testing) or a spend spike (a launch, a batch job). An account that trips both just counts as likely abuse, and nothing is counted twice.
+The report keeps two totals apart. **Likely abuse** is what comes from strong signals: farms, copy-paste bots, shared Gmail inboxes and keys used from all over the world. **Worth a look** is for weak signals that often have an innocent explanation, like a throwaway email on its own (someone testing) or a spend spike (a launch, a batch job). An account that trips both just counts as likely abuse, and nothing is counted twice.
 
 ## What it won't do
 
@@ -167,6 +169,7 @@ About half of that is just reading the CSV. Everything is loaded into memory, so
 - [x] Disposable emails
 - [x] Shared / leaked keys
 - [x] Copy-paste bots
+- [x] Gmail aliases
 - [x] Spend spikes
 - [x] Terminal report (with a total that counts each account once)
 - [x] JSON output
@@ -180,3 +183,4 @@ About half of that is just reading the CSV. Everything is loaded into memory, so
 ---
 
 Built by [@polfananas](https://github.com/polfananas)
+
