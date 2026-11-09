@@ -1,5 +1,15 @@
+"""The luxvigil command: scan, demo and generate.
+
+Everything here is plumbing: read the arguments, load the logs and the config,
+build the report and print it. The actual checks live in checks/ and report.py.
+
+Exit codes: 0 when the scan ran (whatever it found), 1 when it couldn't
+(bad file, bad config, bad arguments). A scan finding abuse is not an error.
+"""
+
 import argparse
 import json
+import math
 import sys
 import tempfile
 from pathlib import Path
@@ -23,7 +33,23 @@ def parse_map(items):
     return mapping
 
 
+def _bad_args(args):
+    """Catch arguments that would quietly give nonsense, before reading anything."""
+    for name in ("price_in", "price_out"):
+        value = getattr(args, name)
+        # nan and inf get through float(), and would turn every cost into nan
+        if value is not None and (not math.isfinite(value) or value < 0):
+            return f"--{name.replace('_', '-')} should be a price of 0 or more, got {value}"
+    # with 1 every single account would be its own "farm" or shared key
+    if args.min_farm < 2:
+        return f"--min-farm should be 2 or more, got {args.min_farm}"
+    if args.min_countries < 2:
+        return f"--min-countries should be 2 or more, got {args.min_countries}"
+    return None
+
+
 def run_demo(seed=42, keep=None):
+    """Make a month of fake logs with abuse planted in, and scan them."""
     rows, planted = generate(seed=seed)
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(keep) if keep else Path(tmp) / "demo-logs.csv"
@@ -82,8 +108,15 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     if args.command == "scan":
-        if (args.price_in is not None and args.price_in < 0) or (args.price_out is not None and args.price_out < 0):
-            print("luxvigil: prices can't be negative", file=sys.stderr)
+        problem = _bad_args(args)
+        if problem:
+            print(f"luxvigil: {problem}", file=sys.stderr)
+            return 1
+        # config first: it's tiny, and a typo in it shouldn't make you wait for a big file to load first
+        try:
+            config = load_config(args.config)
+        except (OSError, ConfigError) as e:
+            print(f"luxvigil: bad config: {e}", file=sys.stderr)
             return 1
         try:
             mapping = parse_map(args.map)
@@ -93,13 +126,9 @@ def main(argv=None):
         except (OSError, LogFormatError) as e:
             print(f"luxvigil: can't read {args.logs}: {e}", file=sys.stderr)
             return 1
+        # notes go to stderr so --json output stays clean to pipe into jq
         for note in notes:
             print(f"   note: {note}", file=sys.stderr)
-        try:
-            config = load_config(args.config)
-        except (OSError, ConfigError) as e:
-            print(f"luxvigil: bad config: {e}", file=sys.stderr)
-            return 1
         report = build_report(rows, min_farm=args.min_farm, min_countries=args.min_countries, config=config)
         if args.json:
             print(json.dumps(to_dict(report, notes), indent=2, ensure_ascii=False))
