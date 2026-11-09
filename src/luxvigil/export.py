@@ -12,8 +12,11 @@ import hashlib
 
 from luxvigil import __version__
 
+# Bump this if the shape of the json changes, so scripts reading it can tell.
 FORMAT_VERSION = 1
 
+# For every check: the most likely innocent reason it fired. Every finding
+# carries one, so nobody bans a customer without thinking twice.
 INNOCENT = {
     "account_farm": "a shared office machine or test devices used by your own team",
     "disposable_emails": "developers or privacy-minded people trying the product",
@@ -23,6 +26,7 @@ INNOCENT = {
     "gmail_aliases": "one person with a couple of test accounts, or a small team sharing an inbox",
 }
 
+# For every check: what an analyst should look at next to confirm or rule it out.
 NEXT = {
     "account_farm": "check signup dates and payment methods of these accounts, real users rarely share a device",
     "disposable_emails": "see if these accounts also show up in a stronger finding before doing anything",
@@ -34,35 +38,51 @@ NEXT = {
 
 
 def _id(check, *parts):
+    """A short id built from the check name and what makes the finding unique
+    (its accounts, its key...). Same input, same id, every run."""
     digest = hashlib.sha256("|".join([check, *map(str, parts)]).encode()).hexdigest()
     return f"{check}-{digest[:10]}"
 
 
 def _money(x):
+    # 4 decimals is plenty for dollars and keeps float noise out of the json
     return round(x, 4)
 
 
+def _date(t):
+    return t.isoformat() if t else None
+
+
 def _finding(check, severity, summary, accounts, requests, cost, evidence, *id_parts):
+    """Every finding has the same shape, whatever check it comes from."""
     return {
         "id": _id(check, *id_parts),
         "check": check,
-        "severity": severity,
-        "summary": summary,
+        "severity": severity,  # "likely" (strong signal) or "review" (could be innocent)
+        "summary": summary,  # the same one-liner as in the terminal report
         "accounts": sorted(accounts),
         "requests": requests,
         "cost_usd": _money(cost),
-        "evidence": evidence,
+        "evidence": evidence,  # check-specific details, see each block below
         "innocent_explanation": INNOCENT[check],
         "next_step": NEXT[check],
     }
 
 
 def to_dict(report, notes=()):
+    """Turn a Report into plain dicts and lists, ready for json.dumps."""
     findings = []
+
+    # strong signals first: these count towards "likely abuse"
     for f in report.farms:
         findings.append(_finding(
             "account_farm", "likely", f.why, f.accounts, f.requests, f.cost_usd,
-            {"shared_devices": f.devices, "shared_networks": f.networks},
+            {
+                "shared_devices": f.devices,
+                "shared_networks": f.networks,
+                "first_seen": _date(f.first_seen),  # when the farm was active
+                "last_seen": _date(f.last_seen),
+            },
             *sorted(f.accounts),
         ))
     for b in report.bots:
@@ -74,7 +94,7 @@ def to_dict(report, notes=()):
     for g in report.aliases:
         findings.append(_finding(
             "gmail_aliases", "likely", g.why, g.accounts, g.requests, g.cost_usd,
-            {"spellings_used": g.addresses},
+            {"spellings_used": g.addresses},  # never the inbox itself, that's an email
             *sorted(g.accounts),
         ))
     for k in report.keys:
@@ -89,6 +109,8 @@ def to_dict(report, notes=()):
             },
             k.key,
         ))
+
+    # weak signals: only "worth a look" unless the account also tripped a strong one
     if report.emails:
         e = report.emails
         alone = sorted(set(e.accounts) & report.review_accounts)
@@ -98,6 +120,7 @@ def to_dict(report, notes=()):
             *sorted(e.accounts),
         ))
     for s in report.spikes:
+        # a spike on an account that's already likely abuse (e.g. a leaked key) is likely too
         severity = "likely" if s.account in report.flagged_accounts else "review"
         findings.append(_finding(
             "spend_spike", severity, s.why, [s.account], s.requests, s.cost_usd,
@@ -112,10 +135,8 @@ def to_dict(report, notes=()):
     return {
         "luxvigil": __version__,
         "format": FORMAT_VERSION,
-        "period": {
-            "from": report.first_seen.isoformat() if report.first_seen else None,
-            "to": report.last_seen.isoformat() if report.last_seen else None,
-        },
+        "period": {"from": _date(report.first_seen), "to": _date(report.last_seen)},
+        # same two totals as the terminal report, each request counted once
         "totals": {
             "requests": report.requests,
             "accounts": report.accounts,
@@ -128,6 +149,6 @@ def to_dict(report, notes=()):
         },
         "config": report.config_path or None,
         "ignored_accounts": report.ignored_accounts,
-        "notes": list(notes),
+        "notes": list(notes),  # warnings from reading the logs (duplicates, bad IPs...)
         "findings": findings,
     }
