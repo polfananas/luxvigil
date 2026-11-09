@@ -1,11 +1,20 @@
-"""The log format luxvigil reads: one row per API request, as a CSV."""
+"""The log format luxvigil reads: one row per API request, as a CSV.
+
+This is the only place that touches your file. Everything after it works on
+clean Request objects, so all the "is this row any good" checks live here:
+bad numbers stop the scan (or get skipped with --skip-bad-rows), smaller
+oddities like duplicated rows or missing IPs just get a warning.
+
+Exports from Excel and friends are handled too: a BOM at the start of the
+file, and ; or tab instead of , as the separator (European Excel uses ;).
+"""
 
 import csv
 import ipaddress
 import math
-from functools import lru_cache
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from functools import lru_cache
 
 # column -> what it is
 COLUMNS = {
@@ -61,6 +70,11 @@ class LogFormatError(ValueError):
     pass
 
 
+# unix timestamps outside this range are almost surely something else (a date
+# written as 20261001, a counter, an id...) and would quietly land in 1970
+_EARLIEST, _LATEST = 946_684_800, 4_102_444_800  # 2000-01-01 and 2100-01-01
+
+
 def _parse_time(value):
     """ISO 8601 or a unix timestamp (seconds or milliseconds). No timezone means UTC."""
     value = value.strip()
@@ -71,6 +85,8 @@ def _parse_time(value):
         return t if t.tzinfo else t.replace(tzinfo=timezone.utc)
     if number > 1e11:  # milliseconds
         number /= 1000
+    if not _EARLIEST <= number <= _LATEST:  # also catches nan
+        raise ValueError(f"timestamp '{value}' doesn't look like a date (use ISO 8601 or unix seconds)")
     return datetime.fromtimestamp(number, tz=timezone.utc)
 
 
@@ -96,6 +112,7 @@ def _tokens(value, name):
 
 
 def _money(value, name):
+    """An amount of dollars: 0 or more, and a real number (no nan or inf)."""
     try:
         x = float(value)
     except (TypeError, ValueError):
@@ -103,6 +120,11 @@ def _money(value, name):
     if not math.isfinite(x) or x < 0:
         raise ValueError(f"{name} should be 0 or more, got '{value}'")
     return x
+
+
+def _separator(first_line):
+    """Comma, semicolon or tab: whichever shows up most in the header line."""
+    return max([",", ";", "\t"], key=first_line.count)
 
 
 def resolve_columns(fieldnames, mapping=None):
@@ -147,8 +169,14 @@ def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None, ski
     notes: pass a list to get told which columns were matched automatically, and about duplicates etc.
     skip_bad: skip rows that don't parse instead of stopping (you're told how many and why).
     """
-    with open(path, newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
+    # utf-8-sig quietly drops the BOM Excel puts at the start of a file, which
+    # would otherwise turn the first column into "\ufefftimestamp"
+    with open(path, newline="", encoding="utf-8-sig") as f:
+        first_line = f.readline()
+        if not first_line.strip():
+            raise LogFormatError("the file is empty")
+        f.seek(0)
+        reader = csv.DictReader(f, delimiter=_separator(first_line))
         cols, found = resolve_columns(reader.fieldnames, mapping)
         if notes is not None:
             notes.extend(found)
@@ -165,6 +193,7 @@ def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None, ski
                 "or pass --price-in and --price-out ($ per 1M tokens) to work it out from tokens"
             )
 
+        # 1. read and check every row
         rows = []
         seen, duplicates, bad_ips = set(), 0, 0
         # the same account, email, key, IP... repeat on thousands of rows: keep one copy of each string
@@ -208,6 +237,7 @@ def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None, ski
                 first_error = first_error or f"line {line}: {e}"
                 continue
 
+            # 2. smaller oddities: count them, don't stop
             # only keep a hash of each row, keeping the rows themselves doubles memory on big files
             fingerprint = hash(tuple(r.values()))
             if fingerprint in seen:

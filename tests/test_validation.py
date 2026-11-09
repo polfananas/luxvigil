@@ -85,3 +85,39 @@ def test_cli_skip_bad_rows_and_negative_prices(tmp_path, capsys):
     assert main(["scan", str(path), "--skip-bad-rows"]) == 0
     assert "skipped 1 bad row" in capsys.readouterr().err
     assert main(["scan", str(path), "--price-in", "-1", "--price-out", "1"]) == 1
+
+
+
+# exports from Excel and friends, and numbers that aren't really dates
+
+def write_raw(tmp_path, text, encoding="utf-8"):
+    path = tmp_path / "raw.csv"
+    path.write_bytes(text.encode(encoding))
+    return path
+
+
+HEADER = ",".join(COLUMNS)
+ROW = "2026-10-01T00:00:00Z,a,a@gmail.com,k,1.2.3.4,ES,,p,10,10,0.01"
+
+
+def test_excel_bom_is_fine(tmp_path):
+    (row,) = load_logs(write_raw(tmp_path, f"{HEADER}\n{ROW}\n", encoding="utf-8-sig"))
+    assert row.account_id == "a"
+
+
+def test_semicolons_and_tabs(tmp_path):
+    for sep in (";", "\t"):
+        text = f"{HEADER}\n{ROW}\n".replace(",", sep)
+        (row,) = load_logs(write_raw(tmp_path, text))
+        assert row.email == "a@gmail.com" and row.cost_usd == 0.01
+
+
+def test_empty_file(tmp_path):
+    with pytest.raises(LogFormatError, match="the file is empty"):
+        load_logs(write_raw(tmp_path, ""))
+
+
+@pytest.mark.parametrize("value", ["20261001", "2026", "-5"])
+def test_numbers_that_arent_unix_timestamps(tmp_path, value):
+    with pytest.raises(LogFormatError, match="doesn't look like a date"):
+        load_logs(write(tmp_path, {"timestamp": value}))
