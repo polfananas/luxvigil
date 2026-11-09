@@ -7,10 +7,20 @@ getting farmed.
 The domain list ships with luxvigil (from github.com/disposable-email-domains,
 public domain), so this runs fully offline. Subdomains count too:
 x.mailinator.com is still mailinator.
+
+On its own this is a weak signal: devs testing your product and privacy-minded
+people use these too. That's why an account with only a throwaway email lands
+in "worth a look", and only counts as likely abuse if a stronger check agrees.
+
+Limits worth knowing:
+  - the list goes stale, new throwaway domains pop up every week
+    (refresh it with scripts/update_disposable.py before a release)
+  - someone with their own domain and a catch-all inbox looks perfectly normal
 """
 
 from collections import Counter
 from dataclasses import dataclass, field
+from functools import lru_cache
 from importlib import resources
 
 
@@ -28,13 +38,17 @@ class DisposableEmails:
 
     @property
     def why(self):
+        """The one-liner that shows up in the report, with the 3 most used domains."""
         top = ", ".join(f"{d} ({n})" for d, n in self.domains.most_common(3))
         return f"{len(self.accounts)} of {self.total_accounts} accounts ({self.share:.0%}) use throwaway emails: {top}"
 
 
+# ~10k domains: read the file once per run, not once per check that needs it
+@lru_cache(maxsize=1)
 def load_disposable_domains():
+    """The bundled list of disposable domains, skipping blank lines and # comments."""
     text = resources.files("luxvigil.data").joinpath("disposable_domains.txt").read_text(encoding="utf-8")
-    return {line.strip() for line in text.splitlines() if line.strip() and not line.startswith("#")}
+    return frozenset(line.strip() for line in text.splitlines() if line.strip() and not line.startswith("#"))
 
 
 def disposable_domain(email, domains):
@@ -54,6 +68,7 @@ def find_disposable_emails(requests, domains=None):
     """Return a DisposableEmails report, or None if nobody used one."""
     domains = load_disposable_domains() if domains is None else domains
 
+    # one email per account is enough: the first one we see
     account_domain = {}
     all_accounts = set()
     for r in requests:
@@ -70,6 +85,7 @@ def find_disposable_emails(requests, domains=None):
         total_accounts=len(all_accounts),
         domains=Counter(flagged.values()),
     )
+    # add up everything those accounts spent
     for r in requests:
         if r.account_id in flagged:
             report.requests += 1
