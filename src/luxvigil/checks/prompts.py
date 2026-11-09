@@ -1,14 +1,22 @@
 """Copy-paste bots: different accounts sending the exact same prompts again and again.
 
 People write their own prompts. Bots run templates. When the same prompt
-(by hash, we never see the text) comes from 5+ accounts and each of them sends
-it several times, that's a script, not a coincidence.
+(by hash, we never see the text) is sent by 5+ accounts that each send it
+3+ times themselves, that's a script, not a coincidence.
 
-The "several times" part matters: lots of real users type "hi" or "test" once,
-so a prompt shared by many accounts on its own isn't enough.
+The "each send it 3+ times" part matters: lots of real users type "hi" or
+"test" once, so a prompt shared by many accounts isn't enough on its own.
+And it's per account, not an average: one power user sending a prompt 100
+times shouldn't drag four people who sent it once into a bot.
 
 Accounts that share any flagged prompt end up in the same group, so a bot
 rotating through 5 templates shows up as one group, not five.
+
+Limits worth knowing:
+  - a legit integration sending a fixed template on behalf of its users can
+    look the same (that's in the "innocent explanation" of --json)
+  - a bot that adds a random word to every prompt changes the hash each time
+    and slips through, since we only compare hashes, never the text
 """
 
 from collections import defaultdict
@@ -21,12 +29,13 @@ from luxvigil.checks.groups import Groups
 class PromptBot:
     accounts: list[str]
     prompts: list[str]  # the repeated prompt hashes that tie the group together
-    repeats: int  # times those prompts were sent in total
-    requests: int = 0
+    repeats: int  # times those accounts sent those prompts, in total
+    requests: int = 0  # all requests from these accounts, not just the repeated ones
     cost_usd: float = 0.0
 
     @property
     def why(self):
+        """The one-liner that shows up in the report."""
         n = len(self.prompts)
         what = "the same prompt" if n == 1 else f"the same {n} prompts"
         return f"{len(self.accounts)} accounts sending {what} over and over ({self.repeats:,} times)"
@@ -35,30 +44,35 @@ class PromptBot:
 def find_prompt_bots(requests, min_accounts=5, min_repeats=3):
     """Return the groups of accounts running the same prompts, biggest cost first.
 
-    A prompt counts as repeated when `min_accounts`+ accounts send it and they
-    send it `min_repeats`+ times each on average.
+    A prompt is flagged when `min_accounts`+ accounts each sent it `min_repeats`+ times.
+    Only those accounts are part of the bot, not everyone who ever sent the prompt.
     """
-    sends = defaultdict(lambda: defaultdict(int))  # prompt -> account -> times sent
+    # 1. how many times each account sent each prompt: prompt -> account -> count
+    sends = defaultdict(lambda: defaultdict(int))
     for r in requests:
         if r.prompt_hash:
             sends[r.prompt_hash][r.account_id] += 1
 
-    repeated = {}
+    # 2. for each prompt, keep the accounts that sent it over and over themselves.
+    #    If enough of them did, the prompt is a bot template
+    repeated = {}  # prompt -> {account: times sent}, only the heavy senders
     for prompt, per_account in sends.items():
-        total = sum(per_account.values())
-        if len(per_account) >= min_accounts and total / len(per_account) >= min_repeats:
-            repeated[prompt] = per_account
+        heavy = {acc: n for acc, n in per_account.items() if n >= min_repeats}
+        if len(heavy) >= min_accounts:
+            repeated[prompt] = heavy
 
     if not repeated:
         return []
 
+    # 3. accounts sharing any template end up together, so a bot that rotates
+    #    through several templates is one group
     groups = Groups()
-    for per_account in repeated.values():
-        groups.join_all(list(per_account))
+    for heavy in repeated.values():
+        groups.join_all(list(heavy))
 
     bots = []
     for accs in groups.members().values():
-        prompts = sorted(p for p, per_account in repeated.items() if set(per_account) <= accs)
+        prompts = sorted(p for p, heavy in repeated.items() if set(heavy) <= accs)
         bots.append(
             PromptBot(
                 accounts=sorted(accs),
@@ -67,6 +81,7 @@ def find_prompt_bots(requests, min_accounts=5, min_repeats=3):
             )
         )
 
+    # 4. add up everything those accounts spent
     owner = {acc: bot for bot in bots for acc in bot.accounts}
     for r in requests:
         bot = owner.get(r.account_id)
