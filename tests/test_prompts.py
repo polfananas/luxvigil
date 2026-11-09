@@ -48,3 +48,18 @@ def test_thresholds_are_tunable():
     rows = [req(f"a{i}", "p") for i in range(4) for _ in range(2)]
     assert find_prompt_bots(rows) == []
     assert len(find_prompt_bots(rows, min_accounts=4, min_repeats=2)) == 1
+
+def test_casual_users_of_a_bot_prompt_are_not_dragged_in():
+    # 5 bots hammering a template, plus 10 real people who sent the same text once
+    rows = [req(f"bot{i}", "template") for i in range(5) for _ in range(4)]
+    rows += [req(f"u{i}", "template") for i in range(10)]
+    (bot,) = find_prompt_bots(rows)
+    assert bot.accounts == [f"bot{i}" for i in range(5)]
+    assert bot.repeats == 20
+
+
+def test_one_power_user_doesnt_make_a_bot():
+    # one account sends a prompt 100 times, four others once: avg is 20, but it's one person
+    rows = [req("power", "p")] * 100 + [req(f"u{i}", "p") for i in range(4)]
+    assert find_prompt_bots(rows) == []
+
