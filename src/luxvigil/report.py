@@ -56,10 +56,17 @@ class Report:
 
 
 def build_report(rows, min_farm=5, min_countries=5, config=None):
+    """Run every check on `rows` and work out the two totals.
+
+    Accounts, keys or emails ignored in the config are left out of the checks,
+    but still count towards the overall requests, accounts and spend.
+    """
     all_rows = rows
     if config:
         rows = [r for r in rows if not config.ignores(r)]
 
+    # 1. run the checks. Bots go first because farms need them to know which
+    #    accounts already look off (see suspect_accounts in farms.py)
     bots = find_prompt_bots(rows)
     report = Report(
         requests=len(all_rows),
@@ -75,6 +82,7 @@ def build_report(rows, min_farm=5, min_countries=5, config=None):
         aliases=find_gmail_aliases(rows),
     )
 
+    # 2. sort accounts by how strong the evidence against them is
     strong = set()  # accounts whose whole traffic counts as likely abuse
     for farm in report.farms:
         strong.update(farm.accounts)
@@ -82,11 +90,14 @@ def build_report(rows, min_farm=5, min_countries=5, config=None):
         strong.update(bot.accounts)
     for group in report.aliases:
         strong.update(group.accounts)
+    # a throwaway email only matters on its own if nothing stronger already caught the account
     weak = set(report.emails.accounts) - strong if report.emails else set()
 
-    away = {k.key: k.home_country for k in report.keys}
+    away = {k.key: k.home_country for k in report.keys}  # leaked key -> its home country
     key_accounts = {a for k in report.keys for a in k.accounts}
 
+    # 3. walk every request once and put it in at most one bucket. Strong wins
+    #    over weak, so nothing is ever counted twice
     likely = review = 0.0
     counted_on_day = defaultdict(float)  # (account, day) -> already counted, either bucket
     for r in rows:
@@ -99,6 +110,9 @@ def build_report(rows, min_farm=5, min_countries=5, config=None):
             review += r.cost_usd
             counted_on_day[day] += r.cost_usd
 
+    # 4. spikes are per day, not per request: add only the extra over the usual
+    #    that isn't already in a bucket. A leaked key usually shows up as a spike
+    #    too, and its requests are counted above already, so the spike adds ~0
     spend_on_day = defaultdict(float)
     spike_accounts = {s.account for s in report.spikes}
     for r in rows:
@@ -110,6 +124,7 @@ def build_report(rows, min_farm=5, min_countries=5, config=None):
             extra = spend_on_day[(s.account, day)] - s.usual_daily
             review += max(0.0, extra - counted_on_day[(s.account, day)])
 
+    # 5. who ends up where. An account in both lists only shows as likely abuse
     report.abuse_cost = likely
     report.review_cost = review
     report.flagged_accounts = strong | key_accounts
@@ -120,6 +135,7 @@ def build_report(rows, min_farm=5, min_countries=5, config=None):
 
 
 def _plural(n, word):
+    """_plural(1, "farm") -> "1 farm", _plural(3, "farm") -> "3 farms"."""
     return f"{n} {word}{'' if n == 1 else 's'}"
 
 
