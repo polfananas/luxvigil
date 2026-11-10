@@ -40,7 +40,7 @@ class DisposableEmails:
     def why(self):
         """The one-liner that shows up in the report, with the 3 most used domains."""
         top = ", ".join(f"{d} ({n})" for d, n in self.domains.most_common(3))
-        return f"{len(self.accounts)} of {self.total_accounts} accounts ({self.share:.0%}) use throwaway emails: {top}"
+        return f"{len(self.accounts):,} of {self.total_accounts:,} accounts ({self.share:.0%}) use throwaway emails: {top}"
 
 
 # ~10k domains: read the file once per run, not once per check that needs it

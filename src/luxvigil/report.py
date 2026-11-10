@@ -134,9 +134,22 @@ def build_report(rows, min_farm=5, min_countries=5, config=None):
     return report
 
 
+# on real logs a check can find hundreds of things. The terminal shows the most
+# expensive ones (every list is already sorted by cost), --json has all of them
+SHOW = 10
+
+
 def _plural(n, word):
-    """_plural(1, "farm") -> "1 farm", _plural(3, "farm") -> "3 farms"."""
-    return f"{n} {word}{'' if n == 1 else 's'}"
+    """_plural(1, "farm") -> "1 farm", _plural(1500, "farm") -> "1,500 farms"."""
+    return f"{n:,} {word}{'' if n == 1 else 's'}"
+
+
+def _top(items, line):
+    """One line per item for the first SHOW, then a single "...and N more"."""
+    out = [line(x) for x in items[:SHOW]]
+    if len(items) > SHOW:
+        out.append(f"     …and {len(items) - SHOW:,} more, run with --json to see them all")
+    return out
 
 
 def render_text(report):
@@ -175,9 +188,8 @@ def render_text(report):
 
     if report.farms:
         n = sum(len(f.accounts) for f in report.farms)
-        out.append(f"  🚨 {_plural(len(report.farms), 'account farm')}, {n} accounts")
-        for f in report.farms:
-            out.append(f"     - {f.why}  ·  {f.requests:,} requests  ·  ~${f.cost_usd:,.2f}")
+        out.append(f"  🚨 {_plural(len(report.farms), 'account farm')}, {n:,} accounts")
+        out += _top(report.farms, lambda f: f"     - {f.why}  ·  {f.requests:,} requests  ·  ~${f.cost_usd:,.2f}")
     else:
         out.append("  ✅ no account farms")
 
@@ -193,32 +205,28 @@ def render_text(report):
 
     if report.keys:
         out.append(f"  🔑 {_plural(len(report.keys), 'key')} probably shared or leaked")
-        for k in report.keys:
-            out.append(f"     - {k.why}  ·  {k.requests:,} requests from abroad  ·  ~${k.cost_usd:,.2f}")
+        out += _top(report.keys, lambda k: f"     - {k.why}  ·  {k.requests:,} requests from abroad  ·  ~${k.cost_usd:,.2f}")
     else:
         out.append("  ✅ no shared or leaked keys")
 
     if report.bots:
         n = sum(len(b.accounts) for b in report.bots)
-        out.append(f"  🤖 {_plural(len(report.bots), 'copy-paste bot')}, {n} accounts")
-        for b in report.bots:
-            out.append(f"     - {b.why}  ·  {b.requests:,} requests  ·  ~${b.cost_usd:,.2f}")
+        out.append(f"  🤖 {_plural(len(report.bots), 'copy-paste bot')}, {n:,} accounts")
+        out += _top(report.bots, lambda b: f"     - {b.why}  ·  {b.requests:,} requests  ·  ~${b.cost_usd:,.2f}")
     else:
         out.append("  ✅ no copy-paste bots")
 
     if report.aliases:
         n = sum(len(g.accounts) for g in report.aliases)
         inboxes = len(report.aliases)
-        out.append(f"  📮 {inboxes} shared Gmail inbox{'es' if inboxes > 1 else ''}, {n} accounts")
-        for g in report.aliases:
-            out.append(f"     - {g.why}  ·  {g.requests:,} requests  ·  ~${g.cost_usd:,.2f}")
+        out.append(f"  📮 {inboxes:,} shared Gmail inbox{'es' if inboxes > 1 else ''}, {n:,} accounts")
+        out += _top(report.aliases, lambda g: f"     - {g.why}  ·  {g.requests:,} requests  ·  ~${g.cost_usd:,.2f}")
     else:
         out.append("  ✅ no shared Gmail inboxes")
 
     if report.spikes:
         out.append(f"  💸 {_plural(len(report.spikes), 'spend spike')} (could be a launch or a batch job, check first)")
-        for s in report.spikes:
-            out.append(f"     - {s.why}  ·  {s.requests:,} requests  ·  ~${s.cost_usd:,.2f} extra")
+        out += _top(report.spikes, lambda s: f"     - {s.why}  ·  {s.requests:,} requests  ·  ~${s.cost_usd:,.2f} extra")
     else:
         out.append("  ✅ no spend spikes")
 
