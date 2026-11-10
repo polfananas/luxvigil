@@ -12,3 +12,6 @@ build/
 /data/
 examples/*.csv
 !examples/sample*.csv
+
+# benchmark datasets, download them yourself (see benchmarks/README)
+benchmarks/data/

@@ -161,6 +161,12 @@ On fake logs, on a small 2-core cloud box with Python 3.13 (`python scripts/benc
 
 About half of that is just reading the CSV. Everything is loaded into memory, so tens of millions of rows will need a big machine or splitting the file by month. Run the script on your own machine to get your numbers.
 
+## Does it work on real fraud?
+
+There's no public dataset of AI API abuse with labels, so we tested the farm check on the closest thing: Amazon's "Fraud ecommerce" benchmark (~150k signups with a fraud label). With the default settings, **9 out of 10 accounts it flags are real fraud**, and it catches about half of all the fraud in there. No ML, just accounts sharing a device.
+
+Only the farm check is tested there, and it's e-commerce, not AI API logs. Full numbers, caveats and how to run it in [benchmarks/](benchmarks/).
+
 ## Status
 
 - [x] Name & scope
@@ -173,6 +179,7 @@ About half of that is just reading the CSV. Everything is loaded into memory, so
 - [x] Spend spikes
 - [x] Terminal report (with a total that counts each account once)
 - [x] JSON output
+- [x] Farm check tested on real labeled fraud
 - [ ] HTML report (v0.2)
 - [ ] Read LiteLLM / Helicone / gateway exports directly (v0.3)
 
