@@ -38,7 +38,7 @@ class AliasGroup:
             how = "all with the exact same address"
         else:
             how = f"using {self.addresses} spellings of it (+tags or dots)"
-        return f"{len(self.accounts)} accounts on the same Gmail inbox, {how}"
+        return f"{len(self.accounts):,} accounts on the same Gmail inbox, {how}"
 
 
 def find_gmail_aliases(requests, min_accounts=3):
