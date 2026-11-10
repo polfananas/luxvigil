@@ -163,7 +163,7 @@ About half of that is just reading the CSV. Everything is loaded into memory, so
 
 ## Does it work on real fraud?
 
-There's no public dataset of AI API abuse with labels, so we tested the farm check on the closest thing: Amazon's "Fraud ecommerce" benchmark (~150k signups with a fraud label). With the default settings, **9 out of 10 accounts it flags are real fraud**, and it catches about half of all the fraud in there. No ML, just accounts sharing a device.
+There's no public dataset of AI API abuse with labels, so we tested the farm check on the closest thing: Amazon's "Fraud ecommerce" benchmark (~150k signups with a fraud label). The fraud there comes in a burst of farms in one month, and luxvigil catches it: **9 out of 10 accounts it flags are real fraud**, with no ML and no tuning. On Amazon's own test set, which has hardly any farms, it flags almost nothing and its device signal scores about the same as their best model.
 
 Only the farm check is tested there, and it's e-commerce, not AI API logs. Full numbers, caveats and how to run it in [benchmarks/](benchmarks/).
 
