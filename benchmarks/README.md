@@ -94,3 +94,76 @@ python benchmarks/fraud_ecommerce.py --split amazon
 ```
 
 Takes a few seconds.
+## WildChat (copy-paste bots, spend spikes, scale)
+
+[WildChat-1M](https://huggingface.co/datasets/allenai/WildChat-1M) (Allen
+Institute for AI, ODC-BY) is ~838k conversations people had with a free GPT-3.5 /
+GPT-4 chatbot in 2023-2024. That's exactly what luxvigil is for: a free AI service,
+logged. There are no abuse labels, so there's no precision or recall here. The
+test is "run it on real logs, then go read what it flags".
+
+How it maps to a luxvigil log:
+
+- one request per user message, ~2M of them
+- no logins, so each hashed IP counts as one account (188k of them)
+- the prompt hash is a hash of the message, so the copy-paste bot check has something real to chew on
+- tokens and cost are estimates (~4 characters per token, priced at what OpenAI charged back then)
+- no devices, emails or keys, so farms, throwaway emails, keys and Gmail aliases can't be tested here.
+  The device field is left empty on purpose: the browser header is the closest thing,
+  but thousands of people share the same Chrome, and using it would invent farms
+
+### Speed
+
+1,960,074 requests: 27s to scan on a small 2-core cloud box (plus ~80s to turn
+the parquet files into a CSV, that part is the benchmark script, not luxvigil).
+
+### What it found (we read the flagged groups by hand, no message text is published here)
+
+Real automation running on a free chatbot:
+
+- ~170 accounts generating product titles for a print-on-demand shop from the
+  same few templates, i.e. someone using the free chat as an API for a business
+- ~50 accounts sending the control messages of an autonomous agent framework in a loop
+- small groups of scripts generating training data (scripted dialogues, review
+  categorisation) and a well-known jailbreak template sent from several accounts
+
+That's the kind of thing luxvigil is meant to surface.
+
+### What it got wrong, and what we changed
+
+The first run said 34% of the spend was likely abuse. It wasn't. The biggest
+"bot" was 2,262 accounts tied together by messages like "more", "shorter" or
+"hi": thousands of people type those, some of them over and over, and the check
+chained them all into one group.
+
+Fix (in `checks/prompts.py`): a prompt only counts as a template if at least 20%
+of the accounts that ever sent it are repeating it. A bot template is sent
+almost only by the bot, "more" is sent by thousands of people and most of them
+don't repeat it. That broke up the fake group and the synthetic demo is unchanged.
+
+It's not fully solved. Follow-ups like "continue" or "go on" (in lots of
+languages) are typed so often by the people who use them that they still pass
+the 20% rule. After the fix the report says ~20% of the spend is likely abuse,
+and the biggest group in there (~310 accounts) is still mostly that. **On
+chat-style logs, read the copy-paste bot groups before trusting the dollar total.**
+
+One idea we're looking at: a real template goes out the same every time, so its
+requests are the same size every time, while "continue" drags a different
+amount of chat history along each time. On WildChat that separates the two
+almost perfectly, but it would also drop bots whose logs pad prompts with
+varying context, so it's not in yet.
+
+### Spend spikes
+
+1,440 spikes on 803 accounts. The ones we read were mostly heavy, very human
+users (long creative writing sessions, homework, coding help) plus one
+automated image-prompt generator. That's why spikes only count as "worth a
+look". It also showed the report should group repeat spikes by account: 272
+accounts spiked more than once.
+
+### Run it
+
+```
+pip install pyarrow                     # only for this script, luxvigil itself doesn't need it
+python benchmarks/wildchat.py --download   # ~3.4 GB into benchmarks/data/wildchat/
+```
