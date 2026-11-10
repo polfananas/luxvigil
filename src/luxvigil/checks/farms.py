@@ -52,7 +52,7 @@ class Farm:
             n = len(self.networks)
             nets = ", ".join(self.networks[:2]) + ("…" if n > 2 else "")  # don't print 40 networks
             bits.append(f"{n} shared network{'s' if n > 1 else ''} ({nets}, with throwaway emails or template prompts)")
-        return f"{len(self.accounts)} accounts on " + " + ".join(bits)
+        return f"{len(self.accounts):,} accounts on " + " + ".join(bits)
 
 
 # The same IPs show up over and over in a log, so each one is only worked out once.

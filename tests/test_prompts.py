@@ -63,3 +63,33 @@ def test_one_power_user_doesnt_make_a_bot():
     rows = [req("power", "p")] * 100 + [req(f"u{i}", "p") for i in range(4)]
     assert find_prompt_bots(rows) == []
 
+
+
+# found on WildChat: phrases everyone types ("more", "hi") aren't bot templates,
+# even when a handful of people happen to repeat them
+
+def test_phrase_everyone_types_isnt_a_bot():
+    # 100 people type "more" once or twice, 6 of them a lot. 6% repeating: just people
+    rows = [req(f"u{i}", "hash_of_more") for i in range(100) for _ in range(2 if i % 2 else 1)]
+    rows += [req(f"u{i}", "hash_of_more") for i in range(6) for _ in range(3)]
+    assert find_prompt_bots(rows) == []
+
+
+def test_template_sent_mostly_by_the_bot_still_counts():
+    # 8 accounts hammering a template, 2 people who sent it once: 80% repeating
+    rows = [req(f"bot{i}", "template") for i in range(8) for _ in range(5)]
+    rows += [req(f"u{i}", "template") for i in range(2)]
+    (bot,) = find_prompt_bots(rows)
+    assert len(bot.accounts) == 8
+
+
+def test_common_phrase_doesnt_chain_strangers_together():
+    # two real bots, plus a phrase that people in both of them (and many others) type.
+    # Without the share rule, that phrase glued both bots into one group
+    rows = [req(f"a{i}", "template_a") for i in range(5) for _ in range(4)]
+    rows += [req(f"b{i}", "template_b") for i in range(5) for _ in range(4)]
+    rows += [req(acc, "hash_of_more") for acc in [f"a{i}" for i in range(5)] + [f"b{i}" for i in range(5)]
+             for _ in range(3)]
+    rows += [req(f"u{i}", "hash_of_more") for i in range(200)]
+    bots = find_prompt_bots(rows)
+    assert sorted(len(b.accounts) for b in bots) == [5, 5]

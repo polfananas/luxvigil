@@ -9,6 +9,15 @@ The "each send it 3+ times" part matters: lots of real users type "hi" or
 And it's per account, not an average: one power user sending a prompt 100
 times shouldn't drag four people who sent it once into a bot.
 
+Repeating it isn't enough either. On real chat logs, short follow-ups like
+"more", "shorter" or "continue" get typed over and over by thousands of people,
+so plenty of them clear the 3+ bar by chance. The difference is who else sends
+it: a bot template is sent almost only by the bot, a common phrase is sent by
+lots of people and most of them don't repeat it. So a prompt only counts if at
+least 20% of the accounts that ever sent it are repeating it. (Found running
+luxvigil on WildChat, see benchmarks/: without this rule "more" and "hi" chained
+2,262 strangers into one fake bot.)
+
 Accounts that share any flagged prompt end up in the same group, so a bot
 rotating through 5 templates shows up as one group, not five.
 
@@ -17,6 +26,8 @@ Limits worth knowing:
     look the same (that's in the "innocent explanation" of --json)
   - a bot that adds a random word to every prompt changes the hash each time
     and slips through, since we only compare hashes, never the text
+  - a short phrase that a small group happens to repeat a lot ("otro",
+    "続き") can still get through the 20% rule, it just ends up as a small group
 """
 
 from collections import defaultdict
@@ -38,13 +49,14 @@ class PromptBot:
         """The one-liner that shows up in the report."""
         n = len(self.prompts)
         what = "the same prompt" if n == 1 else f"the same {n} prompts"
-        return f"{len(self.accounts)} accounts sending {what} over and over ({self.repeats:,} times)"
+        return f"{len(self.accounts):,} accounts sending {what} over and over ({self.repeats:,} times)"
 
 
-def find_prompt_bots(requests, min_accounts=5, min_repeats=3):
+def find_prompt_bots(requests, min_accounts=5, min_repeats=3, min_share=0.2):
     """Return the groups of accounts running the same prompts, biggest cost first.
 
-    A prompt is flagged when `min_accounts`+ accounts each sent it `min_repeats`+ times.
+    A prompt is flagged when `min_accounts`+ accounts each sent it `min_repeats`+ times,
+    and those are at least `min_share` of everyone who sent it.
     Only those accounts are part of the bot, not everyone who ever sent the prompt.
     """
     # 1. how many times each account sent each prompt: prompt -> account -> count
@@ -54,11 +66,12 @@ def find_prompt_bots(requests, min_accounts=5, min_repeats=3):
             sends[r.prompt_hash][r.account_id] += 1
 
     # 2. for each prompt, keep the accounts that sent it over and over themselves.
-    #    If enough of them did, the prompt is a bot template
+    #    If enough of them did, and they're a real chunk of everyone sending it
+    #    (not 5 people out of the 10,000 who type "more"), it's a bot template
     repeated = {}  # prompt -> {account: times sent}, only the heavy senders
     for prompt, per_account in sends.items():
         heavy = {acc: n for acc, n in per_account.items() if n >= min_repeats}
-        if len(heavy) >= min_accounts:
+        if len(heavy) >= min_accounts and len(heavy) >= min_share * len(per_account):
             repeated[prompt] = heavy
 
     if not repeated:
