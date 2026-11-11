@@ -29,9 +29,10 @@ COLUMNS = {
     "input_tokens": "tokens in the request",
     "output_tokens": "tokens in the response",
     "cost_usd": "what that request cost you (optional if you pass --price-in/--price-out)",
+    "prompt_chars": "length of the prompt in characters (optional), so a short \"more\" is never taken for a bot template",
 }
 
-OPTIONAL = {"device_id", "cost_usd"}  # cost can be worked out from tokens if you pass prices
+OPTIONAL = {"device_id", "cost_usd", "prompt_chars"}  # cost can be worked out from tokens if you pass prices
 REQUIRED = [c for c in COLUMNS if c not in OPTIONAL]
 
 # Other names people commonly give these columns. Matched without caring about case.
@@ -48,6 +49,7 @@ ALIASES = {
     "input_tokens": ["prompt_tokens", "tokens_in"],
     "output_tokens": ["completion_tokens", "tokens_out"],
     "cost_usd": ["cost", "total_cost", "spend", "response_cost"],
+    "prompt_chars": ["prompt_length", "prompt_len", "prompt_chars_count"],
 }
 
 
@@ -64,6 +66,7 @@ class Request:
     input_tokens: int
     output_tokens: int
     cost_usd: float
+    prompt_chars: int | None = None  # None when the logs don't say
 
 
 class LogFormatError(ValueError):
@@ -215,6 +218,9 @@ def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None, ski
                     cost = _money(r[cols["cost_usd"]], "cost_usd")
                 else:
                     cost = (tin * price_in + tout * price_out) / 1_000_000
+                # optional, and an empty cell just means "don't know"
+                raw_chars = r[cols["prompt_chars"]].strip() if "prompt_chars" in cols else ""
+                chars = _tokens(raw_chars, "prompt_chars") if raw_chars else None
                 rows.append(
                     Request(
                         timestamp=_parse_time(r[cols["timestamp"]]),
@@ -228,6 +234,7 @@ def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None, ski
                         input_tokens=tin,
                         output_tokens=tout,
                         cost_usd=cost,
+                        prompt_chars=chars,
                     )
                 )
             except (ValueError, KeyError, TypeError) as e:
