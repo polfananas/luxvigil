@@ -152,6 +152,27 @@ def _top(items, line):
     return out
 
 
+def _spikes_by_account(spikes):
+    """[spike, ...] -> [[spikes of one account], ...], most expensive account first.
+
+    One account can spike several times (on WildChat some did 5+ times), and a
+    line per spike buries everyone else. So it's one line per account instead.
+    """
+    groups = {}
+    for s in spikes:  # already sorted by cost, so each account's worst spike comes first
+        groups.setdefault(s.account, []).append(s)
+    return sorted(groups.values(), key=lambda g: sum(s.cost_usd for s in g), reverse=True)
+
+
+def _spike_line(spikes):
+    """The account's worst spike, plus how many more it had, with the totals of all of them."""
+    worst, more = spikes[0], len(spikes) - 1
+    also = f" (+{more} more spike{'s' if more > 1 else ''}, last on {max(s.last_day for s in spikes)})" if more else ""
+    requests = sum(s.requests for s in spikes)
+    extra = sum(s.cost_usd for s in spikes)
+    return f"     - {worst.why}{also}  ·  {requests:,} requests  ·  ~${extra:,.2f} extra"
+
+
 def render_text(report):
     """The terminal version of the report, as a list of lines."""
     out = []
@@ -225,8 +246,10 @@ def render_text(report):
         out.append("  ✅ no shared Gmail inboxes")
 
     if report.spikes:
-        out.append(f"  💸 {_plural(len(report.spikes), 'spend spike')} (could be a launch or a batch job, check first)")
-        out += _top(report.spikes, lambda s: f"     - {s.why}  ·  {s.requests:,} requests  ·  ~${s.cost_usd:,.2f} extra")
+        by_account = _spikes_by_account(report.spikes)
+        on = f" on {_plural(len(by_account), 'account')}" if len(by_account) < len(report.spikes) else ""
+        out.append(f"  💸 {_plural(len(report.spikes), 'spend spike')}{on} (could be a launch or a batch job, check first)")
+        out += _top(by_account, _spike_line)
     else:
         out.append("  ✅ no spend spikes")
 
