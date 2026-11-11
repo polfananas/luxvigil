@@ -114,7 +114,7 @@ How it maps to a luxvigil log:
 
 ### Speed
 
-1,960,074 requests: 27s to scan on a small 2-core cloud box (plus ~80s to turn
+1,960,074 requests: 27s to scan on a small 2-core cloud box (plus a couple of minutes to turn
 the parquet files into a CSV, that part is the benchmark script, not luxvigil).
 
 ### What it found (we read the flagged groups by hand, no message text is published here)
@@ -147,12 +147,6 @@ the 20% rule. After the fix the report says ~20% of the spend is likely abuse,
 and the biggest group in there (~310 accounts) is still mostly that. **On
 chat-style logs, read the copy-paste bot groups before trusting the dollar total.**
 
-One idea we're looking at: a real template goes out the same every time, so its
-requests are the same size every time, while "continue" drags a different
-amount of chat history along each time. On WildChat that separates the two
-almost perfectly, but it would also drop bots whose logs pad prompts with
-varying context, so it's not in yet.
-
 ### Spend spikes
 
 1,440 spikes on 803 accounts. The ones we read were mostly heavy, very human
@@ -161,9 +155,43 @@ automated image-prompt generator. That's why spikes only count as "worth a
 look". It also showed the report should group repeat spikes by account: 272
 accounts spiked more than once.
 
+### Checking it on newer chats nobody tuned on (WildChat-4.8M)
+
+Everything above was worked out looking at WildChat-1M, so it could just be
+fitted to that data. To check, we ran the same luxvigil (20% rule and all, no
+changes) on [WildChat-4.8M](https://huggingface.co/datasets/allenai/WildChat-4.8M),
+keeping only the chats from after WildChat-1M ends: May 2024 to July 2025, newer
+models (GPT-4o, o1, GPT-4.1), never looked at before.
+
+3,364,550 requests, scanned in 27s. ~15% of the spend comes out as likely abuse,
+from 41 copy-paste bot groups (1,211 accounts). We read all 41 by hand:
+
+- 13 are real automation (157 accounts): an agent stuck in a loop on the same
+  error message, product and stock-photo title generators, image prompt
+  generators, a script writing help-centre questions, a chat bot being tested,
+  a broken script sending the same garbage over and over
+- the other 28 are people: "more", "others", "shorter", "go on", "continue" and
+  "answer in Chinese" in lots of languages, plus some long prompts shared around
+- in money, the real automation is only ~11% of what the bot check flags
+
+So the 20% rule holds up the same on new data, and so does its weak spot: in
+chat logs, short follow-ups still dominate the bot total. We tested the "same
+size every time" idea on this data too and dropped it: it removes the
+follow-ups but also loses the agent loop (its history grows every turn) and
+flags greetings like "hello" instead. What does work is looking at how long the
+prompt is: "more" can't be a template. That's the next change.
+
+Two more things this data showed:
+
+- far more distinct hashed IPs (1.67M, about 2 messages each), so the IP hash
+  looks less stable in newer WildChat data than in 1M. Fewer repeats per
+  "account" makes every per-account check quieter
+- 574 spend spikes on 388 accounts, same picture as before: heavy human users
+
 ### Run it
 
 ```
-pip install pyarrow                     # only for this script, luxvigil itself doesn't need it
-python benchmarks/wildchat.py --download   # ~3.4 GB into benchmarks/data/wildchat/
+pip install pyarrow                                      # only for this script, luxvigil itself doesn't need it
+python benchmarks/wildchat.py --download                  # WildChat-1M, ~3.4 GB
+python benchmarks/wildchat.py --dataset 4.8m --download   # the newer chats, ~15 GB to download
 ```
