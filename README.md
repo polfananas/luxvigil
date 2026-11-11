@@ -71,20 +71,24 @@ The report keeps two totals apart. **Likely abuse** is what comes from strong si
 
 ## Log format
 
-One row per API request, as a CSV with these columns:
+One row per API request, as a CSV. Only when, who and how many tokens are a
+must, everything else is optional. Give it what you have: if a column is
+missing, the checks that need it are skipped and the report says so
+(`⏭️ disposable emails: skipped, no emails in the logs`) instead of telling you
+everything's fine.
 
-| column | what it is |
-|---|---|
-| `timestamp` | when it happened, ISO 8601 (`2026-10-01T14:03:22Z`) or a unix timestamp |
-| `account_id` | your id for the account |
-| `email` | email the account signed up with |
-| `api_key_id` | id or hash of the key used, **never the key itself** |
-| `ip` / `country` | client IP and its 2-letter country |
-| `device_id` | device / browser fingerprint (optional, leave empty if you don't have it) |
-| `prompt_hash` | hash of the prompt, so repeated prompts show up without storing them |
-| `input_tokens` / `output_tokens` | tokens in and out |
-| `cost_usd` | what the request cost you (optional, see below) |
-| `prompt_chars` | length of the prompt in characters (optional). Lets the bot check ignore short follow-ups like "more" or "continue" |
+| column | what it is | needed for |
+|---|---|---|
+| `timestamp` | when it happened, ISO 8601 (`2026-10-01T14:03:22Z`) or a unix timestamp | **required** |
+| `account_id` | your id for the account | **required** |
+| `input_tokens` / `output_tokens` | tokens in and out | **required** |
+| `cost_usd` | what the request cost you (or pass prices, see below) | spend, spikes |
+| `email` | email the account signed up with | throwaway emails, Gmail aliases |
+| `api_key_id` | id or hash of the key used, **never the key itself** | shared / leaked keys |
+| `ip` / `country` | client IP and its 2-letter country | farms (IP), shared keys (country) |
+| `device_id` | device / browser fingerprint | farms |
+| `prompt_hash` | hash of the prompt, so repeated prompts show up without storing them | copy-paste bots |
+| `prompt_chars` | length of the prompt in characters | lets the bot check ignore "more", "continue"... |
 
 ### Your columns are called something else?
 
