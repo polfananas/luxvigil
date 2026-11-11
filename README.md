@@ -84,6 +84,7 @@ One row per API request, as a CSV with these columns:
 | `prompt_hash` | hash of the prompt, so repeated prompts show up without storing them |
 | `input_tokens` / `output_tokens` | tokens in and out |
 | `cost_usd` | what the request cost you (optional, see below) |
+| `prompt_chars` | length of the prompt in characters (optional). Lets the bot check ignore short follow-ups like "more" or "continue" |
 
 ### Your columns are called something else?
 
@@ -167,7 +168,7 @@ There's no public dataset of AI API abuse with labels, so we tested the farm che
 
 Only the farm check is tested there, and it's e-commerce, not AI API logs. Full numbers, caveats and how to run it in [benchmarks/](benchmarks/).
 
-We also ran it on [WildChat](https://huggingface.co/datasets/allenai/WildChat-1M), ~2M real messages to a free GPT chatbot (27s to scan). It found people using the free chat as an API (a print-on-demand shop, agent loops, data generation scripts), and it showed the copy-paste bot check over-flags follow-ups like "more" or "continue" in chat logs. Part of that is fixed, the rest is written up in [benchmarks/](benchmarks/).
+We also ran it on [WildChat](https://huggingface.co/datasets/allenai/WildChat-1M), ~2M real messages to a free GPT chatbot (27s to scan). It found people using the free chat as an API (a print-on-demand shop, agent loops, data generation scripts), and it showed the copy-paste bot check over-flags follow-ups like "more" or "continue" in chat logs. With the optional `prompt_chars` column that mostly goes away (34% of the spend flagged went down to 5% on WildChat-1M), checked on 3.4M newer chats we never tuned on. Details in [benchmarks/](benchmarks/).
 
 ## Status
 
