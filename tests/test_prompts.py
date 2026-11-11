@@ -93,3 +93,30 @@ def test_common_phrase_doesnt_chain_strangers_together():
     rows += [req(f"u{i}", "hash_of_more") for i in range(200)]
     bots = find_prompt_bots(rows)
     assert sorted(len(b.accounts) for b in bots) == [5, 5]
+
+
+# found on WildChat-4.8M: "continue", "go on", "继续" still got through the 20% rule.
+# They're short, a template isn't, so with prompt_chars in the logs they're skipped
+
+def sized(account, prompt, chars):
+    r = req(account, prompt)
+    r.prompt_chars = chars
+    return r
+
+
+def test_short_prompts_arent_templates():
+    # 6 people who all type "go on" a lot, and nobody else: passes the 20% rule
+    rows = [sized(f"u{i}", "hash_of_go_on", 5) for i in range(6) for _ in range(4)]
+    assert find_prompt_bots(rows) == []
+
+
+def test_long_template_still_counts():
+    rows = [sized(f"bot{i}", "etsy_title_template", 180) for i in range(6) for _ in range(4)]
+    (bot,) = find_prompt_bots(rows)
+    assert len(bot.accounts) == 6
+
+
+def test_without_prompt_chars_nothing_changes():
+    rows = [req(f"u{i}", "hash_of_go_on") for i in range(6) for _ in range(4)]
+    (bot,) = find_prompt_bots(rows)
+    assert len(bot.accounts) == 6

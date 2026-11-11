@@ -18,6 +18,13 @@ least 20% of the accounts that ever sent it are repeating it. (Found running
 luxvigil on WildChat, see benchmarks/: without this rule "more" and "hi" chained
 2,262 strangers into one fake bot.)
 
+The 20% rule still lets through the follow-ups people who use them type all
+the time ("continue", "go on", "继续"...). Those have one thing in common: they're
+short, and a bot template almost never is. So if your logs have the optional
+prompt_chars column, prompts under 20 characters are never treated as a
+template. On WildChat-4.8M this kept 12 of the 13 real automation groups and
+dropped the fake ones built on short phrases. Without the column, nothing changes.
+
 Accounts that share any flagged prompt end up in the same group, so a bot
 rotating through 5 templates shows up as one group, not five.
 
@@ -26,8 +33,10 @@ Limits worth knowing:
     look the same (that's in the "innocent explanation" of --json)
   - a bot that adds a random word to every prompt changes the hash each time
     and slips through, since we only compare hashes, never the text
-  - a short phrase that a small group happens to repeat a lot ("otro",
-    "続き") can still get through the 20% rule, it just ends up as a small group
+  - without prompt_chars, a short phrase that a small group repeats a lot
+    ("otro", "続き") can still get through the 20% rule
+  - a bot whose template is a short command ("/start") is skipped by the
+    length rule, that's the price of not flagging everyone who types "more"
 """
 
 from collections import defaultdict
@@ -52,18 +61,23 @@ class PromptBot:
         return f"{len(self.accounts):,} accounts sending {what} over and over ({self.repeats:,} times)"
 
 
-def find_prompt_bots(requests, min_accounts=5, min_repeats=3, min_share=0.2):
+def find_prompt_bots(requests, min_accounts=5, min_repeats=3, min_share=0.2, min_chars=20):
     """Return the groups of accounts running the same prompts, biggest cost first.
 
     A prompt is flagged when `min_accounts`+ accounts each sent it `min_repeats`+ times,
     and those are at least `min_share` of everyone who sent it.
     Only those accounts are part of the bot, not everyone who ever sent the prompt.
+    Prompts known to be shorter than `min_chars` characters are skipped.
     """
     # 1. how many times each account sent each prompt: prompt -> account -> count
     sends = defaultdict(lambda: defaultdict(int))
     for r in requests:
-        if r.prompt_hash:
-            sends[r.prompt_hash][r.account_id] += 1
+        if not r.prompt_hash:
+            continue
+        # "more", "go on", "hi": too short to be a template. Unknown length (None) still counts
+        if r.prompt_chars is not None and r.prompt_chars < min_chars:
+            continue
+        sends[r.prompt_hash][r.account_id] += 1
 
     # 2. for each prompt, keep the accounts that sent it over and over themselves.
     #    If enough of them did, and they're a real chunk of everyone sending it

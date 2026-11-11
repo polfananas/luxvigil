@@ -159,6 +159,7 @@ def write_chat(writer, chat):
             "input_tokens": sent,
             "output_tokens": got,
             "cost_usd": (sent * price_in + got * price_out) / 1_000_000,
+            "prompt_chars": len(turn["content"]),  # lets the bot check skip "more", "go on"...
         })
         context = sent + got
         written += 1

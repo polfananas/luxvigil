@@ -179,7 +179,7 @@ chat logs, short follow-ups still dominate the bot total. We tested the "same
 size every time" idea on this data too and dropped it: it removes the
 follow-ups but also loses the agent loop (its history grows every turn) and
 flags greetings like "hello" instead. What does work is looking at how long the
-prompt is: "more" can't be a template. That's the next change.
+prompt is: "more" can't be a template. See the next section.
 
 Two more things this data showed:
 
@@ -187,6 +187,32 @@ Two more things this data showed:
   looks less stable in newer WildChat data than in 1M. Fewer repeats per
   "account" makes every per-account check quieter
 - 574 spend spikes on 388 accounts, same picture as before: heavy human users
+
+### The prompt length rule
+
+Since "more" can't be a template, luxvigil now takes an optional `prompt_chars`
+column (the length of the prompt, nothing about what it says), and prompts
+under 20 characters are never treated as a bot template. Logs without the
+column work exactly as before. The script above fills it in for WildChat.
+
+Share of the spend flagged as likely abuse, as the bot check changed:
+
+| | first version | + 20% rule | + length rule |
+|---|---|---|---|
+| WildChat-1M | 34% | 20% | 5% |
+| WildChat-4.8M, new chats only | – | 15% | 8% |
+
+On WildChat-1M, 14 bot groups (298 accounts) are left, and nearly all of them
+read like automation: the agent loops, a translation pipeline, the
+print-on-demand titles, data generation scripts, a jailbreak template. On the
+newer 4.8M chats, which we didn't use to come up with the rule, it keeps 12 of
+the 13 automation groups we'd found by hand (it drops one that only sends a
+short command) and goes from 1,211 flagged accounts to 381.
+
+Still not perfect. On the newer chats the most expensive group left (16
+accounts, ~$1,450) is long, repeated writing requests that read more like busy
+people than a script, and it's most of what's flagged in dollars there. So the
+advice stays: read the bot groups before quoting the total.
 
 ### Run it
 

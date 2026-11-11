@@ -96,7 +96,7 @@ def write_raw(tmp_path, text, encoding="utf-8"):
     return path
 
 
-HEADER = ",".join(COLUMNS)
+HEADER = ",".join(c for c in COLUMNS if c != "prompt_chars")  # ROW below has the 11 classic columns
 ROW = "2026-10-01T00:00:00Z,a,a@gmail.com,k,1.2.3.4,ES,,p,10,10,0.01"
 
 
@@ -121,3 +121,23 @@ def test_empty_file(tmp_path):
 def test_numbers_that_arent_unix_timestamps(tmp_path, value):
     with pytest.raises(LogFormatError, match="doesn't look like a date"):
         load_logs(write(tmp_path, {"timestamp": value}))
+
+
+# prompt_chars is optional: a number, empty for "don't know", or not there at all
+
+def test_prompt_chars_is_read_when_there(tmp_path):
+    (row,) = load_logs(write(tmp_path, {"prompt_chars": "42"}))
+    assert row.prompt_chars == 42
+
+
+def test_prompt_chars_empty_or_missing_means_unknown(tmp_path):
+    (row,) = load_logs(write(tmp_path, {"prompt_chars": ""}))
+    assert row.prompt_chars is None
+    header = [c for c in COLUMNS if c != "prompt_chars"]
+    (row,) = load_logs(write(tmp_path, {}, header=header))
+    assert row.prompt_chars is None
+
+
+def test_bad_prompt_chars_is_rejected(tmp_path):
+    with pytest.raises(LogFormatError, match="prompt_chars"):
+        load_logs(write(tmp_path, {"prompt_chars": "-3"}))
