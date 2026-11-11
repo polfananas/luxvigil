@@ -45,6 +45,7 @@ class Report:
     review_accounts: set = field(default_factory=set)  # worth a look only
     ignored_accounts: int = 0  # left out because of luxvigil.toml
     config_path: str = ""
+    skipped: dict = field(default_factory=dict)  # check -> why it couldn't run on these logs
 
     @property
     def abuse_share(self):
@@ -53,6 +54,34 @@ class Report:
     @property
     def clean(self):
         return not (self.farms or self.emails or self.keys or self.bots or self.spikes or self.aliases)
+
+
+def _skipped_checks(rows):
+    """Which checks these logs can't feed, and why.
+
+    A column that's missing or empty on every row looks the same to us: there's
+    nothing to go on. Better to say "skipped" than to print "no disposable emails"
+    for logs that never had an email in them.
+    """
+    if not rows:
+        return {}
+
+    def has(field):
+        return any(getattr(r, field) for r in rows)
+
+    skipped = {}
+    if not (has("device_id") or has("ip")):
+        skipped["account farms"] = "no devices or IPs in the logs"
+    if not has("email"):
+        skipped["disposable emails"] = "no emails in the logs"
+        skipped["shared Gmail inboxes"] = "no emails in the logs"
+    if not has("api_key_id"):
+        skipped["shared or leaked keys"] = "no API keys in the logs"
+    elif not has("country"):
+        skipped["shared or leaked keys"] = "no countries in the logs"
+    if not has("prompt_hash"):
+        skipped["copy-paste bots"] = "no prompt hashes in the logs"
+    return skipped
 
 
 def build_report(rows, min_farm=5, min_countries=5, config=None):
@@ -131,12 +160,20 @@ def build_report(rows, min_farm=5, min_countries=5, config=None):
     report.review_accounts = (weak | spike_accounts) - report.flagged_accounts
     report.ignored_accounts = report.accounts - len({r.account_id for r in rows})
     report.config_path = config.path if config else ""
+    report.skipped = _skipped_checks(rows)
     return report
 
 
 # on real logs a check can find hundreds of things. The terminal shows the most
 # expensive ones (every list is already sorted by cost), --json has all of them
 SHOW = 10
+
+
+def _nothing(report, check):
+    """The line for a check that found nothing: either all clear, or it never ran."""
+    if check in report.skipped:
+        return f"  ⏭️  {check}: skipped, {report.skipped[check]}"
+    return f"  ✅ no {check}"
 
 
 def _plural(n, word):
@@ -170,6 +207,8 @@ def render_text(report):
 
     if report.clean:
         out.append("  ✅ nothing suspicious found")
+        # "nothing found" means less if some checks couldn't look
+        out += [_nothing(report, check) for check in report.skipped]
         return out
 
     if report.abuse_cost or report.flagged_accounts:
@@ -191,7 +230,7 @@ def render_text(report):
         out.append(f"  🚨 {_plural(len(report.farms), 'account farm')}, {n:,} accounts")
         out += _top(report.farms, lambda f: f"     - {f.why}  ·  {f.requests:,} requests  ·  ~${f.cost_usd:,.2f}")
     else:
-        out.append("  ✅ no account farms")
+        out.append(_nothing(report, "account farms"))
 
     if report.emails:
         e = report.emails
@@ -201,20 +240,20 @@ def render_text(report):
         if alone:
             out.append(f"     {_plural(alone, 'account')} with no other red flag, could just be people testing")
     else:
-        out.append("  ✅ no disposable emails")
+        out.append(_nothing(report, "disposable emails"))
 
     if report.keys:
         out.append(f"  🔑 {_plural(len(report.keys), 'key')} probably shared or leaked")
         out += _top(report.keys, lambda k: f"     - {k.why}  ·  {k.requests:,} requests from abroad  ·  ~${k.cost_usd:,.2f}")
     else:
-        out.append("  ✅ no shared or leaked keys")
+        out.append(_nothing(report, "shared or leaked keys"))
 
     if report.bots:
         n = sum(len(b.accounts) for b in report.bots)
         out.append(f"  🤖 {_plural(len(report.bots), 'copy-paste bot')}, {n:,} accounts")
         out += _top(report.bots, lambda b: f"     - {b.why}  ·  {b.requests:,} requests  ·  ~${b.cost_usd:,.2f}")
     else:
-        out.append("  ✅ no copy-paste bots")
+        out.append(_nothing(report, "copy-paste bots"))
 
     if report.aliases:
         n = sum(len(g.accounts) for g in report.aliases)
@@ -222,7 +261,7 @@ def render_text(report):
         out.append(f"  📮 {inboxes:,} shared Gmail inbox{'es' if inboxes > 1 else ''}, {n:,} accounts")
         out += _top(report.aliases, lambda g: f"     - {g.why}  ·  {g.requests:,} requests  ·  ~${g.cost_usd:,.2f}")
     else:
-        out.append("  ✅ no shared Gmail inboxes")
+        out.append(_nothing(report, "shared Gmail inboxes"))
 
     if report.spikes:
         out.append(f"  💸 {_plural(len(report.spikes), 'spend spike')} (could be a launch or a batch job, check first)")

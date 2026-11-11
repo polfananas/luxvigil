@@ -32,7 +32,10 @@ COLUMNS = {
     "prompt_chars": "length of the prompt in characters (optional), so a short \"more\" is never taken for a bot template",
 }
 
-OPTIONAL = {"device_id", "cost_usd", "prompt_chars"}  # cost can be worked out from tokens if you pass prices
+# Only when, who and how many tokens are a must. Everything else is optional: a
+# missing column just means the checks that need it are skipped (and the report
+# says so). Cost can be worked out from tokens if you pass prices.
+OPTIONAL = {"email", "api_key_id", "ip", "country", "device_id", "prompt_hash", "cost_usd", "prompt_chars"}
 REQUIRED = [c for c in COLUMNS if c not in OPTIONAL]
 
 # Other names people commonly give these columns. Matched without caring about case.
@@ -205,6 +208,10 @@ def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None, ski
         def one(value):
             return shared.setdefault(value, value)
 
+        def cell(r, name):
+            """The value of one of our columns in this row, "" if the file doesn't have it."""
+            return (r.get(cols[name]) or "").strip() if name in cols else ""
+
         skipped, first_error = 0, None
         for line, r in enumerate(reader, start=2):
             try:
@@ -225,12 +232,12 @@ def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None, ski
                     Request(
                         timestamp=_parse_time(r[cols["timestamp"]]),
                         account_id=one(r[cols["account_id"]]),
-                        email=one(r[cols["email"]].strip().lower()),
-                        api_key_id=one(r[cols["api_key_id"]]),
-                        ip=one(r[cols["ip"]].strip()),
-                        country=one(r[cols["country"]].strip().upper()),
-                        device_id=one(r.get(cols["device_id"]) or "") if "device_id" in cols else "",
-                        prompt_hash=one(r[cols["prompt_hash"]]),
+                        email=one(cell(r, "email").lower()),
+                        api_key_id=one(cell(r, "api_key_id")),
+                        ip=one(cell(r, "ip")),
+                        country=one(cell(r, "country").upper()),
+                        device_id=one(cell(r, "device_id")),
+                        prompt_hash=one(cell(r, "prompt_hash")),
                         input_tokens=tin,
                         output_tokens=tout,
                         cost_usd=cost,
@@ -250,7 +257,7 @@ def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None, ski
             if fingerprint in seen:
                 duplicates += 1
             seen.add(fingerprint)
-            if not _valid_ip(rows[-1].ip):
+            if "ip" in cols and not _valid_ip(rows[-1].ip):
                 bad_ips += 1
 
     # these don't stop the scan, but you should know about them

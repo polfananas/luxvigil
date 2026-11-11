@@ -150,5 +150,6 @@ def to_dict(report, notes=()):
         "config": report.config_path or None,
         "ignored_accounts": report.ignored_accounts,
         "notes": list(notes),  # warnings from reading the logs (duplicates, bad IPs...)
+        "skipped_checks": report.skipped,  # checks these logs had no data for, and why
         "findings": findings,
     }
