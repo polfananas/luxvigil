@@ -167,6 +167,8 @@ There's no public dataset of AI API abuse with labels, so we tested the farm che
 
 Only the farm check is tested there, and it's e-commerce, not AI API logs. Full numbers, caveats and how to run it in [benchmarks/](benchmarks/).
 
+We also ran it on [WildChat](https://huggingface.co/datasets/allenai/WildChat-1M), ~2M real messages to a free GPT chatbot (27s to scan). It found people using the free chat as an API (a print-on-demand shop, agent loops, data generation scripts), and it showed the copy-paste bot check over-flags follow-ups like "more" or "continue" in chat logs. Part of that is fixed, the rest is written up in [benchmarks/](benchmarks/).
+
 ## Status
 
 - [x] Name & scope
