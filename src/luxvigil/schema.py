@@ -167,14 +167,30 @@ def resolve_columns(fieldnames, mapping=None):
     return resolved, notes
 
 
-def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None, skip_bad=False):
-    """Read a log CSV and return a list of Request. Fails loudly on bad input.
+FORMATS = ["csv", "litellm"]
+
+
+def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None, skip_bad=False, fmt="csv"):
+    """Read a log file and return a list of Request. Fails loudly on bad input.
 
     mapping: {our_column: their_column} for files that name things differently.
     price_in / price_out: $ per 1M tokens, used to work out the cost when there's no cost column.
     notes: pass a list to get told which columns were matched automatically, and about duplicates etc.
     skip_bad: skip rows that don't parse instead of stopping (you're told how many and why).
+    fmt: "csv" for our own columns (the default), or the export of a tool we know, like "litellm".
     """
+    if fmt == "litellm":
+        if mapping:
+            raise LogFormatError("--map doesn't go with --format litellm, the columns are already known")
+        from luxvigil.formats.litellm import read_litellm
+
+        fieldnames, records = read_litellm(path, notes)
+        if not records:
+            raise LogFormatError("no requests in this LiteLLM export")
+        return _read_rows(fieldnames, records, None, price_in, price_out, notes, skip_bad, unit="request")
+    if fmt != "csv":
+        raise LogFormatError(f"unknown format '{fmt}', use one of: {', '.join(FORMATS)}")
+
     # utf-8-sig quietly drops the BOM Excel puts at the start of a file, which
     # would otherwise turn the first column into "\ufefftimestamp"
     with open(path, newline="", encoding="utf-8-sig") as f:
@@ -183,82 +199,88 @@ def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None, ski
             raise LogFormatError("the file is empty")
         f.seek(0)
         reader = csv.DictReader(f, delimiter=_separator(first_line))
-        cols, found = resolve_columns(reader.fieldnames, mapping)
-        if notes is not None:
-            notes.extend(found)
+        return _read_rows(reader.fieldnames, reader, mapping, price_in, price_out, notes, skip_bad, unit="line")
 
-        missing = [c for c in REQUIRED if c not in cols]
-        if missing:
-            raise LogFormatError(
-                f"missing columns: {', '.join(missing)}. "
-                f"If they're there under another name, use --map, e.g. --map {missing[0]}=your_column_name"
-            )
-        if "cost_usd" not in cols and (price_in is None or price_out is None):
-            raise LogFormatError(
-                "no cost column. Add a cost_usd column, map yours with --map cost_usd=..., "
-                "or pass --price-in and --price-out ($ per 1M tokens) to work it out from tokens"
-            )
 
-        # 1. read and check every row
-        rows = []
-        seen, duplicates, bad_ips = set(), 0, 0
-        # the same account, email, key, IP... repeat on thousands of rows: keep one copy of each string
-        shared = {}
+def _read_rows(fieldnames, records, mapping, price_in, price_out, notes, skip_bad, unit):
+    """Check and turn rows (dicts) into Requests. `unit` is how errors point at a row: line or request."""
+    cols, found = resolve_columns(fieldnames, mapping)
+    if notes is not None:
+        notes.extend(found)
 
-        def one(value):
-            return shared.setdefault(value, value)
+    missing = [c for c in REQUIRED if c not in cols]
+    if missing:
+        raise LogFormatError(
+            f"missing columns: {', '.join(missing)}. "
+            f"If they're there under another name, use --map, e.g. --map {missing[0]}=your_column_name"
+        )
+    if "cost_usd" not in cols and (price_in is None or price_out is None):
+        raise LogFormatError(
+            "no cost column. Add a cost_usd column, map yours with --map cost_usd=..., "
+            "or pass --price-in and --price-out ($ per 1M tokens) to work it out from tokens"
+        )
 
-        def cell(r, name):
-            """The value of one of our columns in this row, "" if the file doesn't have it."""
-            return (r.get(cols[name]) or "").strip() if name in cols else ""
+    # 1. read and check every row
+    rows = []
+    seen, duplicates, bad_ips = set(), 0, 0
+    # the same account, email, key, IP... repeat on thousands of rows: keep one copy of each string
+    shared = {}
 
-        skipped, first_error = 0, None
-        for line, r in enumerate(reader, start=2):
-            try:
-                if None in r.values():
-                    raise ValueError("this row has fewer columns than the header")
-                if not r[cols["account_id"]].strip():
-                    raise ValueError("account_id is empty")
-                tin = _tokens(r[cols["input_tokens"]], "input_tokens")
-                tout = _tokens(r[cols["output_tokens"]], "output_tokens")
-                if "cost_usd" in cols:
-                    cost = _money(r[cols["cost_usd"]], "cost_usd")
-                else:
-                    cost = (tin * price_in + tout * price_out) / 1_000_000
-                # optional, and an empty cell just means "don't know"
-                raw_chars = r[cols["prompt_chars"]].strip() if "prompt_chars" in cols else ""
-                chars = _tokens(raw_chars, "prompt_chars") if raw_chars else None
-                rows.append(
-                    Request(
-                        timestamp=_parse_time(r[cols["timestamp"]]),
-                        account_id=one(r[cols["account_id"]]),
-                        email=one(cell(r, "email").lower()),
-                        api_key_id=one(cell(r, "api_key_id")),
-                        ip=one(cell(r, "ip")),
-                        country=one(cell(r, "country").upper()),
-                        device_id=one(cell(r, "device_id")),
-                        prompt_hash=one(cell(r, "prompt_hash")),
-                        input_tokens=tin,
-                        output_tokens=tout,
-                        cost_usd=cost,
-                        prompt_chars=chars,
-                    )
+    def one(value):
+        return shared.setdefault(value, value)
+
+    def cell(r, name):
+        """The value of one of our columns in this row, "" if the file doesn't have it."""
+        return (r.get(cols[name]) or "").strip() if name in cols else ""
+
+    skipped, first_error = 0, None
+    # a CSV's first row is line 2 (the header is line 1), an API export just counts requests
+    for line, r in enumerate(records, start=2 if unit == "line" else 1):
+        try:
+            if None in r.values():
+                raise ValueError("this row has fewer columns than the header")
+            if not r[cols["account_id"]].strip():
+                raise ValueError("account_id is empty")
+            tin = _tokens(r[cols["input_tokens"]], "input_tokens")
+            tout = _tokens(r[cols["output_tokens"]], "output_tokens")
+            if "cost_usd" in cols:
+                cost = _money(r[cols["cost_usd"]], "cost_usd")
+            else:
+                cost = (tin * price_in + tout * price_out) / 1_000_000
+            # optional, and an empty cell just means "don't know"
+            raw_chars = r[cols["prompt_chars"]].strip() if "prompt_chars" in cols else ""
+            chars = _tokens(raw_chars, "prompt_chars") if raw_chars else None
+            rows.append(
+                Request(
+                    timestamp=_parse_time(r[cols["timestamp"]]),
+                    account_id=one(r[cols["account_id"]]),
+                    email=one(cell(r, "email").lower()),
+                    api_key_id=one(cell(r, "api_key_id")),
+                    ip=one(cell(r, "ip")),
+                    country=one(cell(r, "country").upper()),
+                    device_id=one(cell(r, "device_id")),
+                    prompt_hash=one(cell(r, "prompt_hash")),
+                    input_tokens=tin,
+                    output_tokens=tout,
+                    cost_usd=cost,
+                    prompt_chars=chars,
                 )
-            except (ValueError, KeyError, TypeError) as e:
-                if not skip_bad:
-                    raise LogFormatError(f"line {line}: {e} (use --skip-bad-rows to skip rows like this)") from e
-                skipped += 1
-                first_error = first_error or f"line {line}: {e}"
-                continue
+            )
+        except (ValueError, KeyError, TypeError) as e:
+            if not skip_bad:
+                raise LogFormatError(f"{unit} {line}: {e} (use --skip-bad-rows to skip rows like this)") from e
+            skipped += 1
+            first_error = first_error or f"{unit} {line}: {e}"
+            continue
 
-            # 2. smaller oddities: count them, don't stop
-            # only keep a hash of each row, keeping the rows themselves doubles memory on big files
-            fingerprint = hash(tuple(r.values()))
-            if fingerprint in seen:
-                duplicates += 1
-            seen.add(fingerprint)
-            if "ip" in cols and not _valid_ip(rows[-1].ip):
-                bad_ips += 1
+        # 2. smaller oddities: count them, don't stop
+        # only keep a hash of each row, keeping the rows themselves doubles memory on big files
+        fingerprint = hash(tuple(r.values()))
+        if fingerprint in seen:
+            duplicates += 1
+        seen.add(fingerprint)
+        if "ip" in cols and not _valid_ip(rows[-1].ip):
+            bad_ips += 1
 
     # these don't stop the scan, but you should know about them
     if notes is not None:
