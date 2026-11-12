@@ -1,0 +1,46 @@
+name: release
+
+# Publishes luxvigil to PyPI when you publish a release on GitHub.
+# No tokens or passwords anywhere: PyPI trusts this exact workflow
+# ("trusted publishing"), which is set up once on pypi.org.
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      # the release tag (v0.1.0) has to match the version in the code,
+      # otherwise we'd publish something different from what the release says
+      - name: check the tag matches the version
+        run: |
+          version=$(python -c "import re; print(re.search(r'__version__ = \"(.+)\"', open('src/luxvigil/__init__.py').read())[1])")
+          echo "code says $version, tag says $GITHUB_REF_NAME"
+          test "v$version" = "$GITHUB_REF_NAME"
+      - run: pip install build
+      - run: python -m build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write  # this is what lets PyPI check it's really this workflow
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
