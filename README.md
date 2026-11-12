@@ -9,8 +9,6 @@
 luxvigil reads the request logs of your AI API (or any app that gives away tokens or credits) and shows you the abuse hiding in them: account farms, throwaway emails, shared or leaked keys, bots sending the same prompts over and over… and roughly how much it cost you.
 
 > ⚠️ Early days. All the checks and the terminal report work. I'm building it in the open step by step, so star or watch if you want to follow along.
->
-> There's no license yet, so for now it's look but don't use. That'll change before v0.1.
 
 ## Why
 
@@ -193,6 +191,14 @@ We also ran it on [WildChat](https://huggingface.co/datasets/allenai/WildChat-1M
 ## Why "luxvigil"?
 
 *Lux* = light, *vigil* = keeping watch through the night. It keeps an eye on what happened while you weren't looking.
+
+## License
+
+[Apache-2.0](LICENSE). Use it, change it, ship it, just keep the notice.
+
+The list of throwaway email domains bundled with luxvigil comes from
+[disposable-email-domains](https://github.com/disposable-email-domains/disposable-email-domains),
+which is public domain (CC0).
 
 ---
 
