@@ -10,6 +10,15 @@ luxvigil reads the request logs of your AI API (or any app that gives away token
 
 > ⚠️ Early days. All the checks and the terminal report work. I'm building it in the open step by step, so star or watch if you want to follow along.
 
+## Try it
+
+```
+pipx run luxvigil demo        # no install: makes fake logs with abuse in them and scans them
+pip install luxvigil          # then: luxvigil scan your-logs.csv
+```
+
+Python 3.11+, no dependencies, nothing leaves your machine.
+
 ## Why
 
 If you run an AI product with a free tier, you're probably feeding someone who signed up 300 times with fake emails. Each account looks normal on its own, so per-user rate limits don't catch it. All you see is the inference bill going up and conversion going down.
@@ -168,9 +177,9 @@ About half of that is just reading the CSV. Everything is loaded into memory, so
 
 There's no public dataset of AI API abuse with labels, so we tested the farm check on the closest thing: Amazon's "Fraud ecommerce" benchmark (~150k signups with a fraud label). The fraud there comes in a burst of farms in one month, and luxvigil catches it: **9 out of 10 accounts it flags are real fraud**, with no ML and no tuning. On Amazon's own test set, which has hardly any farms, it flags almost nothing and its device signal scores about the same as their best model.
 
-Only the farm check is tested there, and it's e-commerce, not AI API logs. Full numbers, caveats and how to run it in [benchmarks/](benchmarks/).
+Only the farm check is tested there, and it's e-commerce, not AI API logs. Full numbers, caveats and how to run it in [benchmarks/](https://github.com/polfananas/luxvigil/tree/main/benchmarks).
 
-We also ran it on [WildChat](https://huggingface.co/datasets/allenai/WildChat-1M), ~2M real messages to a free GPT chatbot (27s to scan). It found people using the free chat as an API (a print-on-demand shop, agent loops, data generation scripts), and it showed the copy-paste bot check over-flags follow-ups like "more" or "continue" in chat logs. With the optional `prompt_chars` column that mostly goes away (34% of the spend flagged went down to 5% on WildChat-1M), checked on 3.4M newer chats we never tuned on. Details in [benchmarks/](benchmarks/).
+We also ran it on [WildChat](https://huggingface.co/datasets/allenai/WildChat-1M), ~2M real messages to a free GPT chatbot (27s to scan). It found people using the free chat as an API (a print-on-demand shop, agent loops, data generation scripts), and it showed the copy-paste bot check over-flags follow-ups like "more" or "continue" in chat logs. With the optional `prompt_chars` column that mostly goes away (34% of the spend flagged went down to 5% on WildChat-1M), checked on 3.4M newer chats we never tuned on. Details in [benchmarks/](https://github.com/polfananas/luxvigil/tree/main/benchmarks).
 
 ## Status
 
@@ -194,7 +203,7 @@ We also ran it on [WildChat](https://huggingface.co/datasets/allenai/WildChat-1M
 
 ## License
 
-[Apache-2.0](LICENSE). Use it, change it, ship it, just keep the notice.
+[Apache-2.0](https://github.com/polfananas/luxvigil/blob/main/LICENSE). Use it, change it, ship it, just keep the notice.
 
 The list of throwaway email domains bundled with luxvigil comes from
 [disposable-email-domains](https://github.com/disposable-email-domains/disposable-email-domains),
