@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- `--format litellm`: read LiteLLM spend logs as they come, from the API (JSON) or the database (CSV)
+
 ## 0.1.0
 
 First release.
