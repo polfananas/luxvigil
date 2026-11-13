@@ -1,6 +1,8 @@
 # luxvigil 🕯️
 
 [![tests](https://github.com/polfananas/luxvigil/actions/workflows/tests.yml/badge.svg)](https://github.com/polfananas/luxvigil/actions/workflows/tests.yml)
+[![PyPI](https://img.shields.io/pypi/v/luxvigil)](https://pypi.org/project/luxvigil/)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](https://github.com/polfananas/luxvigil/blob/main/LICENSE)
 
 **Abuse forensics for AI APIs.** Your free tier is part of your attack surface.
 
@@ -8,7 +10,9 @@
 
 luxvigil reads the request logs of your AI API (or any app that gives away tokens or credits) and shows you the abuse hiding in them: account farms, throwaway emails, shared or leaked keys, bots sending the same prompts over and over… and roughly how much it cost you.
 
-> ⚠️ Early days. All the checks and the terminal report work. I'm building it in the open step by step, so star or watch if you want to follow along.
+![luxvigil demo](https://raw.githubusercontent.com/polfananas/luxvigil/main/docs/demo.gif)
+
+> Early days (v0.2). Everything below works, and I'd love to hear what it finds in your logs, or what it gets wrong: [open an issue](https://github.com/polfananas/luxvigil/issues).
 
 ## Try it
 
@@ -17,7 +21,16 @@ pipx run luxvigil demo        # no install: makes fake logs with abuse in them a
 pip install luxvigil          # then: luxvigil scan your-logs.csv
 ```
 
-Python 3.11+, no dependencies, nothing leaves your machine.
+Python 3.11+, no dependencies, nothing leaves your machine. Using LiteLLM? `luxvigil scan spend_logs.json --format litellm` reads its spend logs as they come.
+
+## Tested on real logs
+
+There's no public dataset of AI API abuse with labels, so we tested it on the closest things there are:
+
+- **~5M real messages to a free GPT chatbot** ([WildChat](https://huggingface.co/datasets/allenai/WildChat-1M)). It found people using the free chat as an API for their business: a print-on-demand shop generating product titles, autonomous agents stuck in loops, scripts generating training data. It also showed us a mistake: the bot check was flagging normal people who type "more" or "continue" a lot. We fixed it and checked the fix on 3.4M newer chats we never tuned on.
+- **Amazon's fraud benchmark** (~150k signups labeled fraud or not). During a wave of fake accounts, 9 out of 10 accounts luxvigil flags are real fraud. Measured exactly the way Amazon's paper does, a simple rule with no training ties their best ML model.
+
+What works, what doesn't and how to run it yourself: [benchmarks/](https://github.com/polfananas/luxvigil/tree/main/benchmarks).
 
 ## Why
 
@@ -190,29 +203,17 @@ On fake logs, on a small 2-core cloud box with Python 3.13 (`python scripts/benc
 
 About half of that is just reading the CSV. Everything is loaded into memory, so tens of millions of rows will need a big machine or splitting the file by month. Run the script on your own machine to get your numbers.
 
-## Does it work on real fraud?
+## What's next
 
-There's no public dataset of AI API abuse with labels, so we tested the farm check on the closest thing: Amazon's "Fraud ecommerce" benchmark (~150k signups with a fraud label). The fraud there comes in a burst of farms in one month, and luxvigil catches it: **9 out of 10 accounts it flags are real fraud**, with no ML and no tuning. On Amazon's own test set, which has hardly any farms, it flags almost nothing and its device signal scores about the same as their best model.
+- [x] six checks, terminal report, JSON, config
+- [x] tested on real data (WildChat, Amazon's fraud benchmark)
+- [x] reads LiteLLM spend logs
+- [ ] LLMjacking: stolen cloud keys running models on your AWS bill (reading CloudTrail / Bedrock logs)
+- [ ] spotting traffic that's too fast to be human
+- [ ] more formats: Helicone, OpenAI usage exports
+- [ ] a Markdown / HTML report to share with your team
 
-Only the farm check is tested there, and it's e-commerce, not AI API logs. Full numbers, caveats and how to run it in [benchmarks/](https://github.com/polfananas/luxvigil/tree/main/benchmarks).
-
-We also ran it on [WildChat](https://huggingface.co/datasets/allenai/WildChat-1M), ~2M real messages to a free GPT chatbot (27s to scan). It found people using the free chat as an API (a print-on-demand shop, agent loops, data generation scripts), and it showed the copy-paste bot check over-flags follow-ups like "more" or "continue" in chat logs. With the optional `prompt_chars` column that mostly goes away (34% of the spend flagged went down to 5% on WildChat-1M), checked on 3.4M newer chats we never tuned on. Details in [benchmarks/](https://github.com/polfananas/luxvigil/tree/main/benchmarks).
-
-## Status
-
-- [x] Name & scope
-- [x] Log format + fake log generator (for demos and tests)
-- [x] Account farms
-- [x] Disposable emails
-- [x] Shared / leaked keys
-- [x] Copy-paste bots
-- [x] Gmail aliases
-- [x] Spend spikes
-- [x] Terminal report (with a total that counts each account once)
-- [x] JSON output
-- [x] Farm check tested on real labeled fraud
-- [ ] HTML report (v0.2)
-- [ ] Read LiteLLM / Helicone / gateway exports directly (v0.3)
+Want one of these sooner, or something else? [Open an issue](https://github.com/polfananas/luxvigil/issues). Pull requests welcome too, see [CONTRIBUTING](https://github.com/polfananas/luxvigil/blob/main/CONTRIBUTING.md).
 
 ## Why "luxvigil"?
 
