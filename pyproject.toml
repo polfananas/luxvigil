@@ -42,3 +42,6 @@ path = "src/luxvigil/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/luxvigil"]
+
+[tool.hatch.build.targets.sdist]
+exclude = ["docs/"]  # just the demo gif for the readme, no need to ship it
