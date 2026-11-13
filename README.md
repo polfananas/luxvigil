@@ -113,6 +113,23 @@ $ luxvigil scan logs.csv --price-in 3 --price-out 15
 
 It will never pick up a column called `api_key`, since in some exports that's the raw key. Hash it first and map the hash with `--map api_key_id=...`.
 
+### Using LiteLLM?
+
+Point luxvigil at your LiteLLM spend logs as they are, no CSV to prepare:
+
+```
+$ luxvigil scan spend_logs.json --format litellm
+```
+
+Get them from your proxy's `/spend/logs/v2` endpoint (save the JSON, all pages), or export the
+`LiteLLM_SpendLogs` table from its database to CSV. Each account is the `end_user` you pass in your
+requests (or the key owner when there isn't one). LiteLLM only stores a hash of each API key, so
+reading it is safe.
+
+LiteLLM doesn't log emails or countries, so those checks are skipped, and prompts are only there
+if you turned on storing them in spend logs. When they are, luxvigil hashes them on your machine
+and drops the text.
+
 ### JSON
 
 Want to feed it into something else? `--json` prints the same report as data. Every finding has a stable id (same logs, same ids), how strong it is, the evidence behind it, what could explain it innocently and what to check next:

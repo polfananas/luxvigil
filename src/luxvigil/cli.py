@@ -19,7 +19,7 @@ from luxvigil.config import Config, ConfigError, load_config
 from luxvigil.export import to_dict
 from luxvigil.generate import generate, write_csv
 from luxvigil.report import build_report, render_text
-from luxvigil.schema import LogFormatError, load_logs
+from luxvigil.schema import FORMATS, LogFormatError, load_logs
 
 
 def parse_map(items):
@@ -88,6 +88,8 @@ def main(argv=None):
                       help="your column name for one of ours, e.g. --map email=user_email (repeat as needed)")
     scan.add_argument("--json", action="store_true",
                       help="print the report as JSON instead (findings with ids, evidence and next steps)")
+    scan.add_argument("--format", choices=FORMATS, default="csv",
+                      help="csv with our columns (default), or litellm to read LiteLLM spend logs as they come")
     scan.add_argument("--skip-bad-rows", action="store_true",
                       help="skip rows that can't be read instead of stopping (you're told how many)")
     scan.add_argument("--price-in", type=float, metavar="USD",
@@ -122,7 +124,7 @@ def main(argv=None):
             mapping = parse_map(args.map)
             notes = []
             rows = load_logs(args.logs, mapping=mapping, price_in=args.price_in, price_out=args.price_out,
-                             notes=notes, skip_bad=args.skip_bad_rows)
+                             notes=notes, skip_bad=args.skip_bad_rows, fmt=args.format)
         except (OSError, LogFormatError) as e:
             print(f"luxvigil: can't read {args.logs}: {e}", file=sys.stderr)
             return 1
