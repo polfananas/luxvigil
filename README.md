@@ -86,6 +86,18 @@ The report keeps two totals apart. **Likely abuse** is what comes from strong si
 
 Neither total is money you've lost. They're what the requests behind the signals cost, and someone still has to look at them to say if it was abuse.
 
+## Reading the report
+
+The report doesn't ban anyone, you do. What to check before acting on each finding:
+
+- **🚨 Account farms**: look at when the accounts signed up and how they pay. Real users rarely share a device. The devices and networks listed are what links them, start there: one shared office laptop can pull two unrelated groups together.
+- **🔑 Keys used from many countries**: ask the owner. A customer with servers in several regions looks exactly the same. If it's not them, rotate the key.
+- **🤖 Copy-paste bots**: look at the prompt behind the hash. Someone using your free tier as an API, or a legit integration sending a fixed template?
+- **📧 Throwaway emails and 📮 shared Gmail inboxes**: on their own, mostly people testing. They matter when the same accounts also show up in a stronger finding.
+- **💸 Spend spikes**: a launch, a batch job or a new big customer look the same as abuse here. Check what the requests were.
+
+`--json` has this for every finding: the evidence, the most likely innocent explanation and what to check next. When something turns out to be fine, add it to `luxvigil.toml` and it stops showing up.
+
 ## What it won't do
 
 - It doesn't block anything. It only looks at what already happened.
@@ -241,4 +253,5 @@ which is public domain (CC0).
 ---
 
 Built by [@polfananas](https://github.com/polfananas)
+
 
