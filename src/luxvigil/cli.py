@@ -8,6 +8,7 @@ Exit codes: 0 when the scan ran (whatever it found), 1 when it couldn't
 """
 
 import argparse
+import csv
 import json
 import math
 import sys
@@ -138,6 +139,11 @@ def main(argv=None):
                              notes=notes, skip_bad=args.skip_bad_rows, fmt=args.format)
         except (OSError, LogFormatError) as e:
             print(f"luxvigil: can't read {args.logs}: {e}", file=sys.stderr)
+            return 1
+        except (csv.Error, UnicodeDecodeError, json.JSONDecodeError) as e:
+            # a broken export, a binary file, a single field of megabytes...: say so, no traceback
+            print(f"luxvigil: can't read {args.logs}, it doesn't look like a valid "
+                  f"{'LiteLLM export' if args.format == 'litellm' else 'UTF-8 CSV'}: {e}", file=sys.stderr)
             return 1
         # notes go to stderr so --json output stays clean to pipe into jq
         for note in notes:

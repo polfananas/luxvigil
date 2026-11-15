@@ -14,6 +14,8 @@
   off a farm only through smaller shares are listed with it (`evidence.linked_accounts`) but not
   counted in it. New `evidence.chained` and `evidence.largest_share`; chained farms have
   `"severity": "review"`
+- a file it can't parse (binary, cut-off JSON, a single field over 128 KB) gets a one-line error
+  instead of a Python traceback. An empty log says "nothing to scan" instead of "no costs"
 
 ## 0.2.0
 
