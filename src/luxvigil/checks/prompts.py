@@ -28,6 +28,11 @@ dropped the fake ones built on short phrases. Without the column, nothing change
 Accounts that share any flagged prompt end up in the same group, so a bot
 rotating through 5 templates shows up as one group, not five.
 
+Cost: two numbers, because they mean different things. The requests that sent
+the repeated prompts are the signal itself. The rest of what those accounts did
+might be perfectly normal, so it's only "worth a look" in the report, never
+added to likely abuse.
+
 Limits worth knowing:
   - a legit integration sending a fixed template on behalf of its users can
     look the same (that's in the "innocent explanation" of --json)
@@ -51,7 +56,16 @@ class PromptBot:
     prompts: list[str]  # the repeated prompt hashes that tie the group together
     repeats: int  # times those accounts sent those prompts, in total
     requests: int = 0  # all requests from these accounts, not just the repeated ones
-    cost_usd: float = 0.0
+    cost_usd: float = 0.0  # what all of those cost
+    signal_requests: int = 0  # only the requests that sent one of the repeated prompts
+    signal_cost_usd: float = 0.0
+
+    def is_signal(self, r):
+        """Is this request one of the repeated prompts (by one of this bot's accounts)?"""
+        return r.prompt_hash in self._prompts and r.account_id in self._accounts
+
+    def __post_init__(self):
+        self._prompts, self._accounts = set(self.prompts), set(self.accounts)
 
     @property
     def why(self):
@@ -108,12 +122,15 @@ def find_prompt_bots(requests, min_accounts=5, min_repeats=3, min_share=0.2, min
             )
         )
 
-    # 4. add up everything those accounts spent
+    # 4. add up what those accounts spent: on the repeated prompts, and in total
     owner = {acc: bot for bot in bots for acc in bot.accounts}
     for r in requests:
         bot = owner.get(r.account_id)
         if bot:
             bot.requests += 1
             bot.cost_usd += r.cost_usd
+            if bot.is_signal(r):
+                bot.signal_requests += 1
+                bot.signal_cost_usd += r.cost_usd
 
-    return sorted(bots, key=lambda b: b.cost_usd, reverse=True)
+    return sorted(bots, key=lambda b: (b.signal_cost_usd, b.signal_requests), reverse=True)

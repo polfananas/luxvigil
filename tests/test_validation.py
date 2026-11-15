@@ -19,7 +19,7 @@ def write(tmp_path, *overrides, header=None):
     return path
 
 
-@pytest.mark.parametrize("value", ["nan", "inf", "-inf", "-5", "abc", ""])
+@pytest.mark.parametrize("value", ["nan", "inf", "-inf", "-5", "abc"])
 def test_bad_cost_is_rejected(tmp_path, value):
     with pytest.raises(LogFormatError, match="line 2: cost_usd"):
         load_logs(write(tmp_path, {"cost_usd": value}))

@@ -8,7 +8,7 @@
 
 > *Nihil occultum quod non manifestetur.* Nothing stays hidden forever (Luke 8:17).
 
-luxvigil reads the request logs of your AI API (or any app that gives away tokens or credits) and shows you the abuse hiding in them: account farms, throwaway emails, shared or leaked keys, bots sending the same prompts over and over… and roughly how much it cost you.
+luxvigil reads the request logs of your AI API (or any app that gives away tokens or credits) and shows you the abuse hiding in them: account farms, throwaway emails, shared or leaked keys, bots sending the same prompts over and over… and what the requests behind them cost.
 
 ![luxvigil demo](https://raw.githubusercontent.com/polfananas/luxvigil/main/docs/demo.gif)
 
@@ -27,8 +27,8 @@ Python 3.11+, no dependencies, nothing leaves your machine. Using LiteLLM? `luxv
 
 There's no public dataset of AI API abuse with labels, so we tested it on the closest things there are:
 
-- **~5M real messages to a free GPT chatbot** ([WildChat](https://huggingface.co/datasets/allenai/WildChat-1M)). It found people using the free chat as an API for their business: a print-on-demand shop generating product titles, autonomous agents stuck in loops, scripts generating training data. It also showed us a mistake: the bot check was flagging normal people who type "more" or "continue" a lot. We fixed it and checked the fix on 3.4M newer chats we never tuned on.
-- **Amazon's fraud benchmark** (~150k signups labeled fraud or not). During a wave of fake accounts, 9 out of 10 accounts luxvigil flags are real fraud. Measured exactly the way Amazon's paper does, a simple rule with no training ties their best ML model.
+- **~5M real messages to a free GPT chatbot** ([WildChat](https://huggingface.co/datasets/allenai/WildChat-1M)). It found people using the free chat as an API for their business: a print-on-demand shop generating product titles, autonomous agents stuck in loops, scripts generating training data. It also showed us a mistake: the bot check was flagging normal people who type "more" or "continue" a lot. We fixed it, and the first fix held up on 3.4M newer chats. The second fix was worked out on those same chats, so it hasn't had an independent test yet. No labels here, so no precision or recall: we read what got flagged.
+- **Amazon's fraud benchmark** (~150k signups labeled fraud or not). During a wave of fake accounts in January 2015, 9 out of 10 accounts luxvigil flags are real fraud. Outside that wave, a shared device is no better than chance. On Amazon's test rows, scoring each account only with what came before it, one simple signal is about level with their best model (AUC 0.642 vs 0.636). It's e-commerce, not AI logs.
 
 What works, what doesn't and how to run it yourself: [benchmarks/](https://github.com/polfananas/luxvigil/tree/main/benchmarks).
 
@@ -47,7 +47,7 @@ You give it a CSV export of your request logs, it gives you a report. Want to se
 ```
 $ luxvigil demo
 
-🕯️ luxvigil · 2026-10-01 to 2026-10-30
+🕯️ luxvigil · 2026-10-01 to 2026-10-30 (UTC)
 
   11,405 requests · 285 accounts · $324.60 spent
   💰 ~$195.25 is likely abuse (60% of your spend), 86 accounts
@@ -58,16 +58,17 @@ $ luxvigil demo
      - 25 accounts on 1 shared device  ·  968 requests  ·  ~$32.39
   📧 60 of 285 accounts (21%) use throwaway emails: mailinator.com (16), sharklasers.com (12), 10minutemail.com (12)
      3,368 requests  ·  ~$144.89
-  🔑 1 key probably shared or leaked
+  🔑 1 key used from many countries at once (shared or leaked?)
      - key key_eb500b7a7780b4c2: 13 countries in a single day, 401 IPs, home is GB  ·  400 requests from abroad  ·  ~$17.97
   🤖 1 copy-paste bot, 60 accounts
-     - 60 accounts sending the same 5 prompts over and over (3,368 times)  ·  3,368 requests  ·  ~$144.89
+     - 60 accounts sending the same 5 prompts over and over (3,368 times)  ·  3,368 repeated requests  ·  ~$144.89
   ✅ no shared Gmail inboxes
   💸 2 spend spikes (could be a launch or a batch job, check first)
      - acc_0100 went from ~$0.02/day to $7.99/day (368x) on 2026-10-28 to 2026-10-30  ·  302 requests  ·  ~$22.76 extra
      - acc_0007 went from ~$0.02/day to $6.26/day (266x) on 2026-10-23 to 2026-10-25  ·  402 requests  ·  ~$17.93 extra
 
   The same account can show up in more than one check. The totals at the top count it once.
+  The $ is what the flagged requests cost, not a confirmed loss: check before you act.
 ```
 
 The checks:
@@ -76,18 +77,22 @@ The checks:
 - **Disposable emails**: signups from mailinator & friends
 - **Shared / leaked keys**: one key used from many countries in a short window (often a sign it's been stolen and resold)
 - **Copy-paste bots**: different accounts sending the same prompts or templates
-- **Gmail aliases**: three or more accounts on the same Gmail inbox (`you+1@gmail.com`, `y.o.u@gmail.com`…), the classic way to get lots of free trials with one inbox
+- **Gmail aliases**: three or more accounts on the same Gmail inbox (`you+1@gmail.com`, `y.o.u@gmail.com`…), the classic way to get lots of free trials with one inbox. It shows the accounts are related, so it's "worth a look", not likely abuse
 - **Spend spikes**: a user suddenly burning 10x their usual
 
 Every flag tells you *why* it fired. No black box.
 
-The report keeps two totals apart. **Likely abuse** is what comes from strong signals: farms, copy-paste bots, shared Gmail inboxes and keys used from all over the world. **Worth a look** is for weak signals that often have an innocent explanation, like a throwaway email on its own (someone testing) or a spend spike (a launch, a batch job). An account that trips both just counts as likely abuse, and nothing is counted twice.
+The report keeps two totals apart. **Likely abuse** is what comes from strong signals: everything a farm's linked accounts spent, the requests a copy-paste bot sent with its repeated prompts, and the requests from abroad on a key used from all over the world. **Worth a look** is for signals that often have an innocent explanation: a throwaway email (someone testing), accounts on one Gmail inbox (someone with a test account), whatever else a bot's accounts did, and spend spikes (a launch, a batch job). Each request is counted once, in the stronger of the two, so one account can have some of each.
+
+Neither total is money you've lost. They're what the requests behind the signals cost, and someone still has to look at them to say if it was abuse.
 
 ## What it won't do
 
 - It doesn't block anything. It only looks at what already happened.
 - It doesn't run in real time or sit in your request path.
+- It doesn't prove anything on its own. It shows you accounts that are related, behave alike or changed suddenly, with the evidence, so you can decide.
 - It never sends your logs anywhere. Everything runs on your machine, which matters since prompt logs are usually some of the most sensitive data you have.
+- It doesn't anonymise anything. It reads what's in your logs (with `--format litellm` that includes the prompts, if they're there, to hash them) and prints the ids it finds, so if your account ids are emails, so are the ones in the report. A prompt hash isn't anonymous either: a short or common prompt can be guessed from it.
 
 ## Log format
 
@@ -99,10 +104,10 @@ everything's fine.
 
 | column | what it is | needed for |
 |---|---|---|
-| `timestamp` | when it happened, ISO 8601 (`2026-10-01T14:03:22Z`) or a unix timestamp | **required** |
+| `timestamp` | when it happened, ISO 8601 (`2026-10-01T14:03:22Z`) or a unix timestamp. Turned into UTC, no timezone means UTC | **required** |
 | `account_id` | your id for the account | **required** |
 | `input_tokens` / `output_tokens` | tokens in and out | **required** |
-| `cost_usd` | what the request cost you (or pass prices, see below) | spend, spikes |
+| `cost_usd` | what the request cost you (or pass prices, see below). Empty means unknown, `0` means free | dollar amounts, spikes |
 | `email` | email the account signed up with | throwaway emails, Gmail aliases |
 | `api_key_id` | id or hash of the key used, **never the key itself** | shared / leaked keys |
 | `ip` / `country` | client IP and its 2-letter country | farms (IP), shared keys (country) |
@@ -124,7 +129,9 @@ No cost column? Give it your prices per 1M tokens and it works it out:
 $ luxvigil scan logs.csv --price-in 3 --price-out 15
 ```
 
-It will never pick up a column called `api_key`, since in some exports that's the raw key. Hash it first and map the hash with `--map api_key_id=...`.
+No cost and no prices still works: every check that doesn't need dollars runs, the report shows requests instead of money, and the spike check is skipped. Some rows with an empty cost? Those count as unknown, not free, and the report says how many there are.
+
+It will never pick up a column called `api_key`, since in some exports that's the raw key. Hash it first and map the hash with `--map api_key_id=...`. If something in `api_key_id` still looks like a raw key (`sk-...`, `AKIA...` and the like), luxvigil uses a hash of it instead and never prints it. That's a guess based on how common keys look, not a guarantee, so don't rely on it.
 
 ### Using LiteLLM?
 
@@ -136,8 +143,11 @@ $ luxvigil scan spend_logs.json --format litellm
 
 Get them from your proxy's `/spend/logs/v2` endpoint (save the JSON, all pages), or export the
 `LiteLLM_SpendLogs` table from its database to CSV. Each account is the `end_user` you pass in your
-requests (or the key owner when there isn't one). LiteLLM only stores a hash of each API key, so
-reading it is safe.
+requests. When there isn't one it falls back to the key owner (`user:...`) and then the key itself
+(`key:...`), and tells you how many requests used each, since a key owner or a key can stand for many
+people. LiteLLM only stores a hash of each API key. Anything in that field that isn't a hash like
+that gets hashed before it's used, so a raw key never shows up. A request with no `spend` is an
+unknown cost, not a free one.
 
 LiteLLM doesn't log emails or countries, so those checks are skipped, and prompts are only there
 if you turned on storing them in spend logs. When they are, luxvigil hashes them on your machine
@@ -145,7 +155,7 @@ and drops the text.
 
 ### JSON
 
-Want to feed it into something else? `--json` prints the same report as data. Every finding has a stable id (same logs, same ids), how strong it is, the evidence behind it, what could explain it innocently and what to check next:
+Want to feed it into something else? `--json` prints the same report as data. Every finding has a stable id (same logs, same ids), how strong it is, what its cost covers, the evidence behind it, what could explain it innocently and what to check next:
 
 ```json
 {
@@ -156,13 +166,14 @@ Want to feed it into something else? `--json` prints the same report as data. Ev
   "accounts": ["acc_0007"],
   "requests": 400,
   "cost_usd": 17.9693,
+  "cost_basis": "requests_from_outside_home_country",
   "evidence": {"key": "key_eb500b7a7780b4c2", "home_country": "GB", "peak_countries_in_a_day": 13, "...": "..."},
   "innocent_explanation": "a customer running the same key from servers in several regions",
   "next_step": "ask the key owner if they use it from these countries, if not rotate it"
 }
 ```
 
-No raw emails or prompts end up in it, only the ids and hashes already in your logs.
+No raw emails or prompts end up in it, only the ids and hashes already in your logs. It also has the settings used, how many requests each check had data for, and the period (in UTC), so two runs can be compared. Dollar amounts are `null` when the logs have no costs. An id is built from the accounts in the finding, so if a farm gains or loses an account, it gets a new id: it's not a campaign tracker. The format is versioned (`"format": 2` since 0.2.0), see the [changelog](https://github.com/polfananas/luxvigil/blob/main/CHANGELOG.md) for what changed.
 
 ### Bad rows
 
@@ -201,7 +212,7 @@ On fake logs, on a small 2-core cloud box with Python 3.13 (`python scripts/benc
 | 100k | 1.2s | ~90 MB |
 | 1M | 18s | ~740 MB |
 
-About half of that is just reading the CSV. Everything is loaded into memory, so tens of millions of rows will need a big machine or splitting the file by month. Run the script on your own machine to get your numbers.
+About half of that is just reading the CSV. On real logs (WildChat, 2M requests) it took 25s and ~1.2 GB, see [benchmarks/](https://github.com/polfananas/luxvigil/tree/main/benchmarks). Everything is loaded into memory, so tens of millions of rows need a big machine. Splitting a file doesn't give the same answer (a farm or a key's 24h window can end up cut in two), so if you have to, scan one whole period at a time. Run the script on your own machine to get your numbers.
 
 ## What's next
 

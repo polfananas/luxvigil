@@ -16,6 +16,22 @@ has `min_accounts` or more.
 
 Plain rule, no scoring: every farm lists the devices and networks that tied it together.
 
+Cost: everything the linked accounts spent. The link is between accounts, not
+requests, so there's no telling which of their requests were "the farm" and
+which weren't. The report says it's the spend of the linked accounts, and
+nothing more.
+
+Limits worth knowing:
+  - groups chain, so one account sharing a device with two unrelated groups
+    joins them into one. The devices and networks listed are the links to check
+  - a device shared months apart still links, the period shown is when any
+    account in the farm was active, not when the device was shared
+  - a network link leans on the other checks (throwaway email, template prompts),
+    so a farm and a bot finding on the same accounts aren't two separate pieces
+    of evidence
+  - what a device_id means depends on where yours comes from: a browser
+    fingerprint and a hardware id are not equally strong
+
 What it won't catch: a careful farm where every account has its own device,
 IPs from residential proxies all over the place and normal-looking emails.
 Nothing is shared, so there's nothing to link.
@@ -147,4 +163,4 @@ def find_farms(requests, min_accounts=5, config=None, suspects=None):
         if farm.last_seen is None or r.timestamp > farm.last_seen:
             farm.last_seen = r.timestamp
 
-    return sorted(farms, key=lambda f: f.cost_usd, reverse=True)
+    return sorted(farms, key=lambda f: (f.cost_usd, f.requests), reverse=True)

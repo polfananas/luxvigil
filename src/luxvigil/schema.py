@@ -10,15 +10,18 @@ file, and ; or tab instead of , as the separator (European Excel uses ;).
 """
 
 import csv
+import hashlib
 import ipaddress
 import math
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import lru_cache
 
 # column -> what it is
 COLUMNS = {
-    "timestamp": "when the request happened, ISO 8601 (2026-10-01T14:03:22Z) or a unix timestamp",
+    "timestamp": "when the request happened, ISO 8601 (2026-10-01T14:03:22Z) or a unix timestamp. "
+                 "Everything is turned into UTC; a time with no timezone is taken as UTC already",
     "account_id": "your internal id for the account",
     "email": "email the account signed up with",
     "api_key_id": "id or hash of the key used (never the key itself)",
@@ -28,7 +31,8 @@ COLUMNS = {
     "prompt_hash": "hash of the prompt text, to spot repeated prompts without storing them",
     "input_tokens": "tokens in the request",
     "output_tokens": "tokens in the response",
-    "cost_usd": "what that request cost you (optional if you pass --price-in/--price-out)",
+    "cost_usd": "what that request cost you (optional: without it, pass --price-in/--price-out, "
+                "or the scan runs on requests and tokens only)",
     "prompt_chars": "length of the prompt in characters (optional), so a short \"more\" is never taken for a bot template",
 }
 
@@ -68,8 +72,9 @@ class Request:
     prompt_hash: str
     input_tokens: int
     output_tokens: int
-    cost_usd: float
+    cost_usd: float  # 0.0 when the cost isn't known, check cost_known before reading it as "free"
     prompt_chars: int | None = None  # None when the logs don't say
+    cost_known: bool = True  # False when the logs had no cost for this request and there were no prices
 
 
 class LogFormatError(ValueError):
@@ -82,13 +87,17 @@ _EARLIEST, _LATEST = 946_684_800, 4_102_444_800  # 2000-01-01 and 2100-01-01
 
 
 def _parse_time(value):
-    """ISO 8601 or a unix timestamp (seconds or milliseconds). No timezone means UTC."""
+    """ISO 8601 or a unix timestamp (seconds or milliseconds), always returned in UTC.
+
+    No timezone means UTC. A time with an offset is converted, so 01:30+02:00 and
+    23:30Z the day before are the same instant and land on the same (UTC) day.
+    """
     value = value.strip()
     try:
         number = float(value)
     except ValueError:
         t = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        return t if t.tzinfo else t.replace(tzinfo=timezone.utc)
+        return t.astimezone(timezone.utc) if t.tzinfo else t.replace(tzinfo=timezone.utc)
     if number > 1e11:  # milliseconds
         number /= 1000
     if not _EARLIEST <= number <= _LATEST:  # also catches nan
@@ -126,6 +135,22 @@ def _money(value, name):
     if not math.isfinite(x) or x < 0:
         raise ValueError(f"{name} should be 0 or more, got '{value}'")
     return x
+
+
+# How secret API keys usually look (OpenAI, Anthropic, Stripe, AWS, GitHub, Slack,
+# Google...). Only a heuristic: it catches the common ones, not every secret there is.
+_SECRET = re.compile(r"sk-|sk_|rk_|ghp_|gho_|github_pat_|xox[abpr]-|AIza|(?i:bearer\s)|(AKIA|ASIA)[A-Z0-9]{16}$")
+
+
+def looks_like_secret(value):
+    """True for values that look like a raw API key rather than an id or a hash of one."""
+    return _SECRET.match(value) is not None
+
+
+def redact(value):
+    """A raw key -> a stable id that stands in for it. Same key, same id, so grouping still works,
+    but the key itself never gets printed or exported."""
+    return "redacted-" + hashlib.sha256(value.encode()).hexdigest()[:16]
 
 
 def _separator(first_line):
@@ -214,11 +239,12 @@ def _read_rows(fieldnames, records, mapping, price_in, price_out, notes, skip_ba
             f"missing columns: {', '.join(missing)}. "
             f"If they're there under another name, use --map, e.g. --map {missing[0]}=your_column_name"
         )
-    if "cost_usd" not in cols and (price_in is None or price_out is None):
-        raise LogFormatError(
-            "no cost column. Add a cost_usd column, map yours with --map cost_usd=..., "
-            "or pass --price-in and --price-out ($ per 1M tokens) to work it out from tokens"
-        )
+    priced = price_in is not None and price_out is not None
+    if "cost_usd" not in cols and not priced and notes is not None:
+        # still worth scanning: farms, keys and bots don't need dollars, only the spike check does
+        notes.append("no cost column and no --price-in/--price-out, so there are no dollar amounts in this "
+                     "report and spend spikes can't be checked. Add a cost_usd column (or --map cost_usd=...) "
+                     "or pass prices ($ per 1M tokens) to get them")
 
     # 1. read and check every row
     rows = []
@@ -234,6 +260,7 @@ def _read_rows(fieldnames, records, mapping, price_in, price_out, notes, skip_ba
         return (r.get(cols[name]) or "").strip() if name in cols else ""
 
     skipped, first_error = 0, None
+    unknown_cost, estimated_cost, redacted_keys = 0, 0, 0
     # a CSV's first row is line 2 (the header is line 1), an API export just counts requests
     for line, r in enumerate(records, start=2 if unit == "line" else 1):
         try:
@@ -243,19 +270,30 @@ def _read_rows(fieldnames, records, mapping, price_in, price_out, notes, skip_ba
                 raise ValueError("account_id is empty")
             tin = _tokens(r[cols["input_tokens"]], "input_tokens")
             tout = _tokens(r[cols["output_tokens"]], "output_tokens")
-            if "cost_usd" in cols:
-                cost = _money(r[cols["cost_usd"]], "cost_usd")
-            else:
+            # the cost is known (in the logs), worked out (from prices) or unknown. An empty
+            # cell is unknown, not free: only an explicit 0 means the request cost nothing
+            raw_cost = r[cols["cost_usd"]].strip() if "cost_usd" in cols else ""
+            cost_known = True
+            if raw_cost:
+                cost = _money(raw_cost, "cost_usd")
+            elif priced:
                 cost = (tin * price_in + tout * price_out) / 1_000_000
+                estimated_cost += "cost_usd" in cols  # a blank in a cost column, filled in from prices
+            else:
+                cost, cost_known = 0.0, False
             # optional, and an empty cell just means "don't know"
             raw_chars = r[cols["prompt_chars"]].strip() if "prompt_chars" in cols else ""
             chars = _tokens(raw_chars, "prompt_chars") if raw_chars else None
+            key = cell(r, "api_key_id")
+            if key and looks_like_secret(key):
+                key = redact(key)
+                redacted_keys += 1
             rows.append(
                 Request(
                     timestamp=_parse_time(r[cols["timestamp"]]),
                     account_id=one(r[cols["account_id"]]),
                     email=one(cell(r, "email").lower()),
-                    api_key_id=one(cell(r, "api_key_id")),
+                    api_key_id=one(key),
                     ip=one(cell(r, "ip")),
                     country=one(cell(r, "country").upper()),
                     device_id=one(cell(r, "device_id")),
@@ -264,8 +302,10 @@ def _read_rows(fieldnames, records, mapping, price_in, price_out, notes, skip_ba
                     output_tokens=tout,
                     cost_usd=cost,
                     prompt_chars=chars,
+                    cost_known=cost_known,
                 )
             )
+            unknown_cost += not cost_known
         except (ValueError, KeyError, TypeError) as e:
             if not skip_bad:
                 raise LogFormatError(f"{unit} {line}: {e} (use --skip-bad-rows to skip rows like this)") from e
@@ -289,6 +329,15 @@ def _read_rows(fieldnames, records, mapping, price_in, price_out, notes, skip_ba
         if duplicates:
             notes.append(f"{duplicates:,} duplicate row{'s' if duplicates != 1 else ''} (exact copy of an earlier one), "
                          "check your export isn't doubled")
+        if unknown_cost and "cost_usd" in cols:
+            notes.append(f"{unknown_cost:,} of {len(rows):,} requests have no cost in the logs: they count as "
+                         "unknown, not as free, and the dollar totals only cover the rest")
+        if estimated_cost:
+            notes.append(f"{estimated_cost:,} request{'s' if estimated_cost != 1 else ''} with no cost in the logs, "
+                         "worked out from --price-in/--price-out instead")
+        if redacted_keys:
+            notes.append(f"{redacted_keys:,} api_key_id value{'s' if redacted_keys != 1 else ''} looked like a raw "
+                         "API key, so a hash of it is used instead and the key itself is never shown")
         if bad_ips:
             notes.append(f"{bad_ips:,} row{'s' if bad_ips != 1 else ''} without a valid IP, left out of the network checks")
     return rows
