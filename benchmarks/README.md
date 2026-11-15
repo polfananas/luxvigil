@@ -14,9 +14,18 @@ ship the data, you download it yourself (see below).
 The script turns it into a luxvigil log, runs the normal scan on all of it and
 checks every account flagged as part of a farm against the labels.
 
+Two ways to score it, and they answer different questions:
+
+- **retrospective** (the default): scan the whole file at once, like you'd scan
+  last month's logs. An account counts as sharing a device with accounts that
+  showed up *after* it, too
+- **causal** (`--causal`): score each account only with what had happened up to
+  its own purchase. That's what luxvigil would have said if you'd scanned right
+  then, and the only fair way to compare with a model that can't see the future
+
 ### All accounts
 
-151,112 accounts, 14,151 of them fraud (9.4%):
+151,112 accounts, 14,151 of them fraud (9.4%). Retrospective:
 
 | --min-farm | accounts flagged | precision | recall | legit accounts flagged |
 |---|---|---|---|---|
@@ -25,12 +34,16 @@ checks every account flagged as part of a farm against the labels.
 | 5 (default) | 8,391 | 90.9% | 53.9% | 766 |
 | 10 | 6,548 | 92.0% | 42.5% | 527 |
 
-With the default settings, 9 out of 10 accounts luxvigil flags are real fraud.
-No ML, no tuning, just "these accounts share a device".
+The default of 5 was set before this benchmark existed, it wasn't picked from
+this table. There's no training: the rule is just "these accounts share a device".
 
 The jump between 2 and 3 is the interesting bit. Two accounts on one device is
 often a couple or a family computer, about half of those are legit. Three or
-more is almost always fraud. That's why the default is on the careful side.
+more is mostly fraud here, at least in January (see below).
+
+Causal, at the default of 5: 5,375 accounts flagged, precision 85.7%, recall
+32.6%. Recall drops because a farm only gets flagged from its 5th account on:
+the first four looked fine when they showed up.
 
 ### When the fraud happened (read this before quoting the numbers above)
 
@@ -43,40 +56,60 @@ The fraud in this dataset isn't spread evenly. January 2015 is a burst:
 
 That burst is the farms: lots of accounts on the same device, buying within a
 second of signing up. 7,745 of the 8,391 accounts flagged above are from
-January. After that the fraud is mostly one person, one account, and there's
-nothing shared to link.
+January. Leave January out and it falls apart:
 
-So what the table above really shows is that luxvigil catches a farm attack
-when one happens, without making things up when there isn't one. It doesn't
-mean it catches half of all fraud in general.
+| without January 2015 (141,015 accounts, 6,428 fraud) | flagged | precision | recall |
+|---|---|---|---|
+| retrospective, --min-farm 5 | 646 | 4.5% | 0.5% |
+
+4.5% is the fraud rate of those months, so outside the burst a shared device is
+no better than picking accounts at random. After January the fraud is mostly
+one person, one account, and there's nothing shared to link.
+
+So what this shows is that the farm check catches a farm attack when one
+happens. It doesn't catch fraud in general, and the 90.9% is really "90.9% in a
+month with a farm attack".
 
 ### Next to Amazon's numbers
 
-Amazon's paper scores the last 20% of purchases in time (late August to
-December 2015) and reports AUC. `--split amazon` grades exactly that set. For
-the AUC we use "how many accounts share this device" as the score, which is the
-signal the farm check is built on.
+Amazon's benchmark tests on the last 20% of purchases in time (late August to
+December 2015) and reports AUC. `--split amazon` grades exactly those rows.
+For the AUC we use "how many accounts share this device" as the score, the
+signal the farm check is built on. That's one score, not the whole scan: at
+the default threshold the scan flags 9 accounts there (precision 33%, recall 0.2%).
+
+Same rows is not the same protocol. Their models train on the first 80% and
+then score the test set. Their preprocessing passes the device id as the
+"entity", which is what the best one (Amazon Fraud Detector's "TFI" model)
+builds its history features from, as far as we can tell from their code.
+A retrospective scan instead counts devices across the whole file, later
+purchases included, which no model in the benchmark could do. The causal
+number is the one to compare:
 
 | | AUC on Amazon's test set |
 |---|---|
-| Amazon's best (Amazon Fraud Detector, from the paper) | 0.646 |
-| Their other models (Random Forest, CatBoost, LightGBM, AutoML...) | 0.49 to 0.64 |
-| luxvigil's device signal | 0.659 |
+| Amazon Fraud Detector TFI, their best ([results table in their repo](https://github.com/amazon-science/fraud-dataset-benchmark#benchmark-results)) | 0.636 |
+| Their other models (AFD OFI, AutoGluon, H2O, Auto-sklearn) | 0.515 to 0.522 |
+| device signal, causal (`--split amazon --causal`) | 0.642 |
+| device signal, retrospective (`--split amazon`) | 0.659, sees the future, not comparable |
 
-About level with their best, with no training at all. But there are hardly any
-farms in that period, so with the default settings luxvigil only flags 9
-accounts there. That's the honest result: no farms, (almost) no flags.
+Causal, it's about level with their best, with one feature and no training.
+That's not a win: the difference is tiny, we haven't computed any error bars
+(accounts on the same device aren't independent, so a naive one would be too
+narrow), and there are hardly any farms in that period for either side to find.
 
 If you shuffle the data and take a random 20% instead, January ends up in the
 test set and the same signal scores ~0.84. That's the number you'll see in
-other projects that use a random split. It's not comparable to the paper.
+other projects that use a random split. It's not comparable either.
 
 ### What this does NOT show
 
 - only the farm check is tested. There are no emails, keys, prompts or tokens
   in this data, so the other checks have nothing to look at
-- it's e-commerce, not AI API logs. It tells you the farm logic works on real
-  fraud, not how much abuse your API has
+- it's e-commerce, not AI API logs. It tells you the farm logic finds real
+  farms when there are some, not how precise it'll be on your API
+- every account here buys once, so "accounts on a device" is all the scan has.
+  On real API logs farms also get linked by network, which this doesn't test
 - a careful farm with a fresh device per account wouldn't show up
 
 ### Run it
@@ -91,6 +124,7 @@ other projects that use a random split. It's not comparable to the paper.
 python benchmarks/fraud_ecommerce.py
 python benchmarks/fraud_ecommerce.py --min-farm 3
 python benchmarks/fraud_ecommerce.py --split amazon
+python benchmarks/fraud_ecommerce.py --split amazon --causal
 ```
 
 Takes a few seconds.
@@ -104,18 +138,39 @@ test is "run it on real logs, then go read what it flags".
 
 How it maps to a luxvigil log:
 
-- one request per user message, ~2M of them
-- no logins, so each hashed IP counts as one account (188k of them)
+- one request per user message, ~2M of them. These are rebuilt from
+  conversations, not real API calls: the context of a real request (the chat
+  so far) is only roughly estimated
+- no logins, so each hashed IP counts as one account (188k of them). An IP is
+  not a person: a NAT or a proxy puts many people on one, and a changing IP
+  splits one person in several
 - the prompt hash is a hash of the message, so the copy-paste bot check has something real to chew on
-- tokens and cost are estimates (~4 characters per token, priced at what OpenAI charged back then)
+- tokens and cost are estimates (~4 characters per token, priced at what OpenAI charged back then),
+  so every dollar below is a ballpark, not a bill
 - no devices, emails or keys, so farms, throwaway emails, keys and Gmail aliases can't be tested here.
   The device field is left empty on purpose: the browser header is the closest thing,
   but thousands of people share the same Chrome, and using it would invent farms
 
 ### Speed
 
-1,960,074 requests: 27s to scan on a small 2-core cloud box (plus a couple of minutes to turn
-the parquet files into a CSV, that part is the benchmark script, not luxvigil).
+1,960,074 requests in a 190 MB CSV, on a 2-core cloud box with 7 GB of RAM (luxvigil 0.2.0):
+
+| step | time |
+|---|---|
+| reading and checking the CSV | 17s |
+| all the checks and the report | 8s |
+| peak memory | ~1.2 GB |
+
+Everything is held in memory, so memory grows with the number of rows: plan
+for roughly 0.6 GB per million requests on a CSV like this one. A LiteLLM JSON
+export takes more, since the whole JSON is read in first. Turning the parquet
+files into that CSV takes a couple of minutes more, that's the benchmark
+script, not luxvigil.
+
+Splitting a big file and scanning the pieces is not the same scan: a farm can
+end up split across pieces, a leaked key's 24h window can be cut in two, the
+20% rule of the bot check gets a different denominator and spikes lose their
+history. If your logs don't fit in memory, scan one period at a time and say so.
 
 ### What it found (we read the flagged groups by hand, no message text is published here)
 
@@ -155,13 +210,19 @@ automated image-prompt generator. That's why spikes only count as "worth a
 look". It also showed the report should group repeat spikes by account: 272
 accounts spiked more than once.
 
-### Checking it on newer chats nobody tuned on (WildChat-4.8M)
+### Newer chats (WildChat-4.8M): a check of the 20% rule, not a holdout for what came after
 
 Everything above was worked out looking at WildChat-1M, so it could just be
 fitted to that data. To check, we ran the same luxvigil (20% rule and all, no
 changes) on [WildChat-4.8M](https://huggingface.co/datasets/allenai/WildChat-4.8M),
 keeping only the chats from after WildChat-1M ends: May 2024 to July 2025, newer
-models (GPT-4o, o1, GPT-4.1), never looked at before.
+models (GPT-4o, o1, GPT-4.1), not looked at before that run.
+
+The order matters for what this proves. For the 20% rule, these chats were
+new data. Then we read the 41 groups it flagged, and that reading is what the
+length rule (next section) came from. So for the length rule, this is the data
+it was developed on, not an independent test. A real holdout needs a frozen
+version run once on data nobody has read yet, and we haven't done that.
 
 3,364,550 requests, scanned in 27s. ~15% of the spend comes out as likely abuse,
 from 41 copy-paste bot groups (1,211 accounts). We read all 41 by hand:
@@ -195,24 +256,38 @@ column (the length of the prompt, nothing about what it says), and prompts
 under 20 characters are never treated as a bot template. Logs without the
 column work exactly as before. The script above fills it in for WildChat.
 
-Share of the spend flagged as likely abuse, as the bot check changed:
+Share of the (estimated) spend flagged as likely abuse, as the bot check changed:
 
-| | first version | + 20% rule | + length rule |
-|---|---|---|---|
-| WildChat-1M | 34% | 20% | 5% |
-| WildChat-4.8M, new chats only | – | 15% | 8% |
+| | first version | + 20% rule | + length rule | + only the repeated prompts count (0.2.0) |
+|---|---|---|---|---|
+| WildChat-1M | 34% | 20% | 5% | 1.1% |
+| WildChat-4.8M, new chats only | – | 15% | 8% | not re-run |
+
+The last column is a change in what gets counted, not in what gets found:
+up to the length rule, everything a bot's accounts sent was likely abuse. From
+0.2.0 only the requests with the repeated prompts are, and the rest of what
+those accounts did is "worth a look". On WildChat-1M that's $699 of likely
+abuse plus $2,362 worth a look, from the same 14 groups. We didn't keep the
+4.8M data around to re-run that column.
 
 On WildChat-1M, 14 bot groups (298 accounts) are left, and nearly all of them
 read like automation: the agent loops, a translation pipeline, the
 print-on-demand titles, data generation scripts, a jailbreak template. On the
-newer 4.8M chats, which we didn't use to come up with the rule, it keeps 12 of
-the 13 automation groups we'd found by hand (it drops one that only sends a
-short command) and goes from 1,211 flagged accounts to 381.
+newer 4.8M chats it keeps 12 of the 13 automation groups we'd found by hand (it
+drops one that only sends a short command) and goes from 1,211 flagged accounts
+to 381. Keep in mind those 13 are groups we found by reading what was flagged,
+so "12 of 13" says the rule didn't throw away what we'd already found. It's
+not a recall: nobody went through the unflagged traffic looking for bots
+the check missed.
 
 Still not perfect. On the newer chats the most expensive group left (16
 accounts, ~$1,450) is long, repeated writing requests that read more like busy
 people than a script, and it's most of what's flagged in dollars there. So the
 advice stays: read the bot groups before quoting the total.
+
+All the reading was done once, by one reviewer, with no second opinion and
+no written protocol. And "looks automated" is not "broke the rules": using a free chatbot from a script may or may not be against its terms,
+and we can't tell from the logs.
 
 ### Run it
 

@@ -15,11 +15,24 @@ Get the data yourself, we don't ship it (the license on Kaggle says "unknown"):
     python benchmarks/fraud_ecommerce.py
     python benchmarks/fraud_ecommerce.py --min-farm 3
     python benchmarks/fraud_ecommerce.py --split amazon
+    python benchmarks/fraud_ecommerce.py --split amazon --causal
 
---split amazon scores only the last 20% of purchases in time, the same test set
-Amazon's paper uses, so the AUC can be put next to theirs. Heads up: almost all
-the farm fraud in this data happens in January 2015 and that test set starts in
-late August, so there's very little for the farm check to find there.
+--split amazon scores only the last 20% of purchases in time, the same rows
+Amazon's benchmark tests on. Same rows is not the same protocol though: their
+models train on the first 80% and score each test purchase with what came
+before it, while a luxvigil scan looks at the whole file at once, later
+purchases included. That's the right thing for forensics (you scan last
+month's logs after the fact), but it's not a fair race against a model that
+can't see the future.
+
+--causal scores every account only with what had happened up to its own
+purchase: how many accounts had used its device so far, itself included. That's
+what luxvigil would have said if you'd scanned the logs right then, and it's
+the number to put next to theirs.
+
+Heads up: almost all the farm fraud in this data happens in January 2015 and
+the test set starts in late August, so there's very little for the farm check
+to find there.
 
 What this does NOT test: there are no emails, keys, prompts, tokens or spikes
 in this data, so only the farm check gets measured. And it's e-commerce, not
@@ -95,7 +108,7 @@ def convert(src, dst, countries):
                 "output_tokens": 0,
                 "cost_usd": r["purchase_value"],  # what they bought, so the report shows $ at stake
             })
-    return labels, [account for _, account in sorted(bought)]
+    return labels, [account for _, account in sorted(bought)], {a: t for t, a in bought}
 
 
 def auc(scores, labels):
@@ -121,6 +134,8 @@ def main():
     parser.add_argument("--min-farm", type=int, default=5, help="same as luxvigil scan --min-farm (default 5)")
     parser.add_argument("--split", choices=["all", "amazon"], default="all",
                         help="score every account, or only Amazon's test set (last 20%% in time)")
+    parser.add_argument("--causal", action="store_true",
+                        help="score each account only with the purchases up to its own, no peeking ahead")
     args = parser.parse_args()
 
     src = DATA / "Fraud_Data.csv"
@@ -130,7 +145,7 @@ def main():
     # 1. turn the dataset into a normal luxvigil log (also in data/, also ignored)
     countries = load_countries(DATA / "IpAddress_to_Country.csv")
     logs = DATA / "fraud_ecommerce_luxvigil.csv"
-    labels, in_order = convert(src, logs, countries)
+    labels, in_order, bought_at = convert(src, logs, countries)
 
     # 2. run the same scan you'd get with `luxvigil scan`, on all the logs (like you would on yours),
     #    and take every account in a farm
@@ -141,26 +156,51 @@ def main():
     # 3. which accounts we grade: all of them, or Amazon's test set (the last 20% by purchase time)
     graded = in_order[int(len(in_order) * 0.8):] if args.split == "amazon" else in_order
 
-    # 4. check against the labels
+    # 4. the score behind the AUC: how many accounts share your device. Looking at
+    #    the whole file (what a scan does), or only up to your own purchase (--causal)
+    device_of = {r.account_id: r.device_id for r in rows}
+    if args.causal:
+        seen, score_of = Counter(), {}
+        for acc in in_order:  # in purchase order, so every count only knows the past
+            seen[device_of[acc]] += 1
+            score_of[acc] = seen[device_of[acc]]
+        # a farm, as luxvigil would have called it right then: min-farm accounts on the device so far.
+        # Same thing the scan does here, since a device is the only thing linking accounts in this data
+        flagged = {acc for acc, n in score_of.items() if n >= args.min_farm}
+    else:
+        accounts_on = Counter(device_of.values())
+        score_of = {acc: accounts_on[device_of[acc]] for acc in in_order}
+
+    # 5. check against the labels
     #    precision: of the accounts we flagged, how many really were fraud
     #    recall: of all the fraud, how much we caught
-    #    AUC: uses "how many accounts share your device" as a score, to compare with the paper
-    fraud = {acc for acc in graded if labels[acc]}
-    hits = flagged & set(graded)
-    caught = hits & fraud
-    precision = len(caught) / len(hits) if hits else 0.0
-    recall = len(caught) / len(fraud)
-    accounts_on = Counter(r.device_id for r in rows)
-    device_of = {r.account_id: r.device_id for r in rows}
-    score = auc([accounts_on[device_of[acc]] for acc in graded], [labels[acc] for acc in graded])
+    #    AUC: "how many accounts share your device" as a score, to compare with the benchmark
+    def grade(accounts):
+        fraud = {acc for acc in accounts if labels[acc]}
+        hits = flagged & set(accounts)
+        caught = hits & fraud
+        precision = len(caught) / len(hits) if hits else 0.0
+        recall = len(caught) / len(fraud) if fraud else 0.0
+        return fraud, hits, precision, recall
+
+    fraud, hits, precision, recall = grade(graded)
+    score = auc([score_of[acc] for acc in graded], [labels[acc] for acc in graded])
 
     which = "all accounts" if args.split == "all" else "Amazon's test set, last 20% in time"
-    print(f"{which}: {len(graded):,} accounts, {len(fraud):,} fraud ({len(fraud) / len(graded):.1%})")
+    how = "causal, only what came before each purchase" if args.causal else "whole file, like a scan"
+    print(f"{which} ({how}): {len(graded):,} accounts, {len(fraud):,} fraud ({len(fraud) / len(graded):.1%})")
     print(f"min-farm {args.min_farm}: {len(hits):,} accounts flagged")
     print(f"  precision {precision:.1%}  (flagged accounts that really are fraud)")
     print(f"  recall    {recall:.1%}  (share of all fraud that got flagged)")
     print(f"  wrongly flagged: {len(hits - fraud):,} legit accounts")
     print(f"  AUC {score:.3f}  (accounts per device as a score, 0.5 = coin flip)")
+
+    # most of the farm fraud is one burst in January 2015, so show the rest on its own
+    rest = [acc for acc in graded if not bought_at[acc].startswith("2015-01")]
+    if len(rest) < len(graded):
+        fraud, hits, precision, recall = grade(rest)
+        print(f"without January 2015: {len(rest):,} accounts, {len(fraud):,} fraud, {len(hits):,} flagged, "
+              f"precision {precision:.1%}, recall {recall:.1%}")
 
 
 if __name__ == "__main__":
