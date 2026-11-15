@@ -68,7 +68,18 @@ def run_demo(seed=42, keep=None):
     return 0
 
 
+def _utf8_output():
+    """Windows writes to files and pipes in its old encoding, which has no emojis,
+    so `luxvigil scan logs.csv > report.txt` would crash. Write UTF-8 instead."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass  # not a normal text stream (tests, some IDEs), leave it alone
+
+
 def main(argv=None):
+    _utf8_output()
     parser = argparse.ArgumentParser(
         prog="luxvigil",
         description="Abuse forensics for AI APIs.",
