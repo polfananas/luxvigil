@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- spend spikes: a day with requests that have no cost no longer counts as a $0 day. It never sets
+  the usual spend, so three days with missing costs and then a normal day isn't a "spike" anymore.
+  A day can still spike on its known costs alone, and the report says "at least" when that happens
+- JSON: spend spikes are always `"severity": "review"`, matching the totals (before, a spike on an
+  account with likely abuse said "likely" while its money was counted as worth a look).
+  New `evidence.some_costs_missing`
+
 ## 0.2.0
 
 - `--format litellm`: read LiteLLM spend logs as they come, from the API (JSON) or the database (CSV).

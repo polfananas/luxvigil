@@ -151,14 +151,16 @@ def to_dict(report, notes=()):
             *sorted(g.accounts), known=known,
         ))
     for s in report.spikes:
-        # a spike on an account that's already likely abuse (e.g. a leaked key) is likely too
-        severity = "likely" if s.account in report.flagged_accounts else "review"
+        # always "review", like in the totals: the extra spend of a spike is worth a look.
+        # If the account also has likely abuse (say a leaked key), that's its own finding
         findings.append(_finding(
-            "spend_spike", severity, s.why, [s.account], s.requests, s.cost_usd,
+            "spend_spike", "review", s.why, [s.account], s.requests, s.cost_usd,
             {
                 "usual_daily_usd": _money(s.usual_daily),
                 "peak_daily_usd": _money(s.peak_daily),
                 "days": [str(d) for d in s.days],
+                # some requests on those days had no cost: the real extra was higher
+                "some_costs_missing": s.incomplete,
             },
             s.account, s.first_day, known=known,
         ))

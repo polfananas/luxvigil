@@ -16,6 +16,12 @@ count towards the usual spend, days without any are left out.
 
 Cost: only the extra spend counts (that day's spend minus the usual), not the whole day.
 
+Requests with no cost in the logs are unknown, not free. A day with any of
+them never counts towards the usual spend, since we can't tell what it really
+was, and an account needs 3 complete days before it can spike. A day can still
+spike on the requests with a known cost alone: if those already add up to 10x,
+the real spend did too. The report says when that happened.
+
 Limits worth knowing:
   - days are UTC calendar days, so a burst around midnight gets split in two
   - a slow ramp (2x a week for a month) never jumps 10x in one day and isn't caught
@@ -40,6 +46,7 @@ class Spike:
     cost_usd: float  # extra spend over the usual
     days: list = field(default_factory=list)  # every spike day, for the report
     sustained: bool = False  # still high after a week: probably the new normal
+    incomplete: bool = False  # some requests on the spike days had no cost, so the real spend was higher
 
     @property
     def times(self):
@@ -51,6 +58,8 @@ class Spike:
         when = str(self.first_day) if self.first_day == self.last_day else f"{self.first_day} to {self.last_day}"
         jump = f" ({self.times:,.0f}x)" if self.times else ""  # nothing to divide by if it was spending $0
         tail = ", and it stayed there" if self.sustained else ""
+        if self.incomplete:
+            tail += " (at least: some of those requests had no cost)"
         return (
             f"{self.account} went from ~${self.usual_daily:,.2f}/day to ${self.peak_daily:,.2f}/day"
             f"{jump} on {when}{tail}"
@@ -63,12 +72,13 @@ def find_spikes(requests, multiplier=10, min_history_days=3, min_daily_usd=1.0, 
     After `new_normal_days` spike days in a row, the higher spend becomes the account's
     new normal: the spike is closed and those days start counting as usual spend.
     """
-    # 1. spend and requests per account per day: account -> day -> [spend, requests]
-    daily = defaultdict(lambda: defaultdict(lambda: [0.0, 0]))
+    # 1. per account per day: account -> day -> [known spend, requests, requests with no cost]
+    daily = defaultdict(lambda: defaultdict(lambda: [0.0, 0, 0]))
     for r in requests:
         day = daily[r.account_id][r.timestamp.date()]
         day[0] += r.cost_usd
         day[1] += 1
+        day[2] += not r.cost_known
 
     spikes = []
     for account, days in daily.items():
@@ -77,13 +87,17 @@ def find_spikes(requests, multiplier=10, min_history_days=3, min_daily_usd=1.0, 
 
         # 2. walk the account's days in order, comparing each one to what was usual before it
         for day in sorted(days):
-            spend, n = days[day]
+            spend, n, unknown = days[day]
+            if unknown == n:
+                continue  # no idea what this day cost: it's neither a spike nor usual
+            complete = not unknown  # spend is the real spend, not just a lower bound
             usual = median(history) if len(history) >= min_history_days else None
             is_spike = usual is not None and spend >= max(usual * multiplier, min_daily_usd)
 
             # 3. a week of "spikes" in a row is the new normal, not a spike anymore
             if is_spike and current and current.sustained:
-                history.append(spend)
+                if complete:
+                    history.append(spend)
                 continue
 
             if is_spike:
@@ -94,14 +108,16 @@ def find_spikes(requests, multiplier=10, min_history_days=3, min_daily_usd=1.0, 
                     current.requests += n
                     current.cost_usd += spend - current.usual_daily
                     current.days.append(day)
+                    current.incomplete |= not complete
                     if len(current.days) >= new_normal_days:
                         current.sustained = True
                         history.extend([spend] * len(current.days))  # the higher level is usual now
                 else:
-                    current = Spike(account, usual, spend, day, day, n, spend - usual, [day])
+                    current = Spike(account, usual, spend, day, day, n, spend - usual, [day], incomplete=not complete)
                     spikes.append(current)
             else:
                 current = None
-                history.append(spend)  # spike days don't count towards "usual"
+                if complete:  # spike days and days with missing costs don't count towards "usual"
+                    history.append(spend)
 
     return sorted(spikes, key=lambda s: s.cost_usd, reverse=True)
