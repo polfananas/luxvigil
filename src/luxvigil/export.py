@@ -99,11 +99,17 @@ def to_dict(report, notes=()):
 
     # strong signals first: these count towards "likely abuse"
     for f in report.farms:
+        # direct: one device or network with min_farm accounts on it. Chained: only small
+        # shares linking up in a chain, which innocent setups do too (see farms.py)
         findings.append(_finding(
-            "account_farm", "likely", f.why, f.accounts, f.requests, f.cost_usd,
+            "account_farm", "review" if f.chained else "likely", f.why, f.accounts, f.requests, f.cost_usd,
             {
                 "shared_devices": f.devices,
                 "shared_networks": f.networks,
+                "chained": f.chained,
+                "largest_share": f.largest_share,  # most accounts on any one device or network
+                # linked to the farm only through smaller shares, not in accounts or cost
+                "linked_accounts": f.linked,
                 "first_seen": _date(f.first_seen),  # when the farm was active
                 "last_seen": _date(f.last_seen),
             },
