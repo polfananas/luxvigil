@@ -62,9 +62,11 @@ def test_explicit_map_wins(tmp_path):
         load_logs(tmp_path / "x.csv", mapping={"email": "correo"})
 
 
-def test_no_cost_and_no_prices_fails_clearly(sample):
-    with pytest.raises(LogFormatError, match="--price-in"):
-        load_logs(sample / "theirs.csv")
+def test_no_cost_and_no_prices_still_scans_without_dollars(sample):
+    notes = []
+    rows = load_logs(sample / "theirs.csv", notes=notes)
+    assert rows and not any(r.cost_known for r in rows)
+    assert any("--price-in" in n for n in notes)  # and you're told how to get dollars
 
 
 def test_bad_maps():
