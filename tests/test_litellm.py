@@ -57,8 +57,12 @@ def test_api_export_is_read(tmp_path):
 
 
 def test_account_falls_back_to_key_owner_then_key(tmp_path):
-    rows = load_logs(write_json(tmp_path, [spend_log(1, user="u_owner"), spend_log(2)]), fmt="litellm")
-    assert [r.account_id for r in rows] == ["u_owner", KEY]
+    notes = []
+    logs = [spend_log(1, end_user="cust_1"), spend_log(2, user="u_owner"), spend_log(3)]
+    rows = load_logs(write_json(tmp_path, logs), fmt="litellm", notes=notes)
+    # a key owner or a key is not a customer: the prefix keeps them apart from end users
+    assert [r.account_id for r in rows] == ["cust_1", "user:u_owner", f"key:{KEY}"]
+    assert any("1 by end_user, 1 by user, 1 by api_key" in n for n in notes)
 
 
 def test_prompts_are_hashed_and_the_text_dropped(tmp_path):
@@ -114,3 +118,31 @@ def test_map_doesnt_go_with_litellm(tmp_path):
 def test_empty_export(tmp_path):
     with pytest.raises(LogFormatError, match="no requests"):
         load_logs(write_json(tmp_path, []), fmt="litellm")
+
+
+def test_missing_spend_is_unknown_not_free(tmp_path):
+    free, unknown, null = spend_log(1, end_user="a"), spend_log(2, end_user="a"), spend_log(3, end_user="a")
+    free["spend"] = 0
+    del unknown["spend"]
+    null["spend"] = None
+    notes = []
+    rows = load_logs(write_json(tmp_path, [free, unknown, null]), fmt="litellm", notes=notes)
+    assert [r.cost_known for r in rows] == [True, False, False]
+    assert rows[0].cost_usd == 0  # an explicit 0 is still a free request
+    assert any("2 of 3 requests have no cost" in n for n in notes)
+
+
+@pytest.mark.parametrize("raw", ["sk-proj-abc123SECRETvalue", "sk-1234", "not-a-hash"])
+def test_a_key_that_isnt_a_litellm_hash_never_shows(tmp_path, raw, capsys):
+    logs = [spend_log(i) for i in range(3)]  # no end_user or user: the key is the account too
+    for row in logs:
+        row["api_key"] = raw
+    path = write_json(tmp_path, logs)
+    rows = load_logs(path, fmt="litellm")
+    assert all(r.api_key_id.startswith("redacted-") for r in rows)
+    assert len({r.api_key_id for r in rows}) == 1  # still one key, so grouping works
+    assert all(raw not in r.account_id for r in rows)
+    for args in (["scan", str(path), "--format", "litellm"], ["scan", str(path), "--format", "litellm", "--json"]):
+        main(args)
+        out = capsys.readouterr()
+        assert raw not in out.out and raw not in out.err

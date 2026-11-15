@@ -11,9 +11,12 @@ What maps to what:
   startTime              -> timestamp
   end_user               -> account (falls back to `user`, the key owner, then the key)
   api_key                -> api_key_id. LiteLLM stores a SHA-256 hash of the key,
-                            never the key itself, so this one is safe to read
+                            never the key itself. Anything that isn't a hash like
+                            that (an export someone edited, an old version...) is
+                            hashed here before it's used, so a raw key never shows
   requester_ip_address   -> ip (unless you turned IP logging off)
-  prompt_tokens / completion_tokens / spend -> tokens and cost
+  prompt_tokens / completion_tokens / spend -> tokens and cost. No spend is
+                            an unknown cost, not a free request
   messages               -> prompt_hash and prompt_chars, worked out here and the
                             text thrown away. Only there if you turned on storing
                             prompts in spend logs, otherwise the bot check is skipped
@@ -25,6 +28,15 @@ are skipped (the report says which).
 import csv
 import hashlib
 import json
+import re
+
+from luxvigil.schema import redact
+
+# what LiteLLM writes in api_key: the SHA-256 of the key, in hex
+_HASHED_KEY = re.compile(r"[0-9a-f]{64}")
+
+# which field the account came from, the first one that's there wins
+IDENTITY = ("end_user", "user", "api_key")
 
 # our column -> where it comes from in a LiteLLM spend log
 COLUMNS = ["timestamp", "account_id", "api_key_id", "ip", "input_tokens", "output_tokens",
@@ -91,9 +103,33 @@ def _get(record, name):
     return "" if value is None else str(value).strip()
 
 
+def _key(record):
+    """The key's id, safe to print: LiteLLM's hash as is, anything else hashed here."""
+    key = _get(record, "api_key")
+    if key.lower() in ("", "none", "null"):
+        return ""
+    return key if _HASHED_KEY.fullmatch(key.lower()) else redact(key)
+
+
+def _account(record, key):
+    """(account id, where it came from). end_user is your customer (the `user` you pass in
+    the request). Without it, the best we have is the LiteLLM user who owns the key, or the key.
+
+    The three are different things, and the same string could mean one thing as an end_user
+    and another as a key, so the fallbacks get a prefix: "user:alice", "key:3f2a...".
+    """
+    for field in IDENTITY:
+        value = key if field == "api_key" else _get(record, field)
+        if value.lower() in ("", "none", "null"):
+            continue
+        return (value if field == "end_user" else f"{field.replace('api_', '')}:{value}"), field
+    return "", None
+
+
 def read_litellm(path, notes=None):
     """LiteLLM spend logs -> (our column names, rows as dicts in our columns)."""
-    rows, with_prompt, without_ip = [], 0, 0
+    rows, with_prompt, without_ip, redacted = [], 0, 0, 0
+    identity = dict.fromkeys(IDENTITY, 0)
     for record in _records(path):
         prompt = _last_user_message(record)
         with_prompt += bool(prompt)
@@ -101,22 +137,35 @@ def read_litellm(path, notes=None):
         if ip.lower() in ("none", "null"):
             ip = ""
         without_ip += not ip
+        key = _key(record)
+        redacted += key.startswith("redacted-")
+        account, source = _account(record, key)
+        if source:
+            identity[source] += 1
+        spend = _get(record, "spend")
         rows.append({
             "timestamp": _get(record, "startTime"),
-            # end_user is your customer (the `user` you pass in the request). Without it,
-            # the best we have is the LiteLLM user who owns the key, or the key itself
-            "account_id": _get(record, "end_user") or _get(record, "user") or _get(record, "api_key"),
-            "api_key_id": _get(record, "api_key"),
+            "account_id": account,
+            "api_key_id": key,
             "ip": ip,
             "input_tokens": _get(record, "prompt_tokens") or "0",
             "output_tokens": _get(record, "completion_tokens") or "0",
-            "cost_usd": _get(record, "spend") or "0",
+            # missing spend is an unknown cost, an explicit 0 is free
+            "cost_usd": "" if spend.lower() in ("none", "null") else spend,
             "prompt_hash": prompt_hash(prompt) if prompt else "",
             "prompt_chars": str(len(prompt)) if prompt else "",
         })
 
     if notes is not None:
-        notes.append("reading LiteLLM spend logs: each account is the end_user, or the key owner when there isn't one")
+        used = [f"{n:,} by {field}" for field, n in identity.items() if n]
+        notes.append(f"reading LiteLLM spend logs: accounts are the end_user, else the key's owner (user:...), "
+                     f"else the key (key:...). Requests per account type: {', '.join(used) or 'none'}")
+        if identity["user"] or identity["api_key"]:
+            notes.append("a key owner or a key can stand for many people, so groups built on them say less "
+                         "than groups of end users. Pass `user` in your requests to get end users")
+        if redacted:
+            notes.append(f"{redacted:,} request{'s' if redacted != 1 else ''} had an api_key that isn't a LiteLLM "
+                         "hash (maybe a raw key), so it was hashed here and is never shown")
         if rows and not with_prompt:
             notes.append("no prompts in these logs (LiteLLM only keeps them if you turn on storing prompts "
                          "in spend logs), so copy-paste bots can't be checked")
