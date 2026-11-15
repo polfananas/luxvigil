@@ -84,6 +84,15 @@ def _home_country(reqs, peak_start):
     return reqs[0].country
 
 
+def is_away(r, home):
+    """Does this request count against the key: a known country that isn't home.
+
+    No country is unknown, not abroad. The report uses this same test to add up
+    the spend, so the finding and the totals can never disagree.
+    """
+    return bool(r.country) and r.country != home
+
+
 def find_shared_keys(requests, min_countries=5, window_hours=24):
     """Return the keys used from `min_countries`+ countries inside one window, worst first."""
     # group requests by key, skipping rows with no key or no country to go on
@@ -100,7 +109,7 @@ def find_shared_keys(requests, min_countries=5, window_hours=24):
         if peak < min_countries:
             continue
         home = _home_country(reqs, start)
-        away = [r for r in reqs if r.country != home]
+        away = [r for r in reqs if is_away(r, home)]
         found.append(
             SharedKey(
                 key=key,
@@ -115,4 +124,4 @@ def find_shared_keys(requests, min_countries=5, window_hours=24):
                 window_hours=window_hours,
             )
         )
-    return sorted(found, key=lambda k: k.cost_usd, reverse=True)
+    return sorted(found, key=lambda k: (k.cost_usd, k.requests), reverse=True)

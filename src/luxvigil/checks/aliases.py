@@ -3,6 +3,10 @@
 Gmail ignores dots and anything after a +, so pol@gmail.com, p.o.l@gmail.com
 and pol+7@gmail.com are all the same inbox. Handy for people, and for anyone
 who wants 50 free trials without making 50 Gmail accounts.
+
+It shows the accounts are related, not that anyone did anything wrong: one
+person with a work and a test account looks the same. So in the report it's
+"worth a look", and the cost is everything those accounts spent.
 """
 
 from collections import defaultdict
@@ -64,4 +68,4 @@ def find_gmail_aliases(requests, min_accounts=3):
             g.requests += 1
             g.cost_usd += r.cost_usd
 
-    return sorted(groups.values(), key=lambda g: g.cost_usd, reverse=True)
+    return sorted(groups.values(), key=lambda g: (g.cost_usd, g.requests), reverse=True)

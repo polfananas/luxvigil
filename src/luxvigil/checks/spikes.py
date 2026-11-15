@@ -9,8 +9,10 @@ a few days of history first, so brand new accounts never count as a spike.
 There's also a dollar floor, so going from $0.01 to $0.10 doesn't set anything off.
 
 If the higher spend just keeps going for a week, we stop calling it a spike:
-that's what a customer who started using you for real looks like. The first
-week still shows up, flagged as "and it stayed there", so you can check it.
+that's what a customer who started using you for real looks like. It's also
+what abuse that never stopped looks like, so the first week still shows up,
+flagged as "and it stayed there", for you to check. Only days with traffic
+count towards the usual spend, days without any are left out.
 
 Cost: only the extra spend counts (that day's spend minus the usual), not the whole day.
 
