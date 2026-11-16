@@ -73,7 +73,7 @@ $ luxvigil demo
 
 The checks:
 
-- **Account farms**: lots of accounts on the same device, or on the same network when they also use throwaway emails or template prompts (a shared network alone proves nothing: think mobile carriers and universities)
+- **Account farms**: lots of accounts on the same device, or on the same network when they also use throwaway emails or template prompts (a shared network alone proves nothing: think mobile carriers and universities). Accounts only linked in a chain of small shares (a family computer here, a support agent's login there) show up as a chain worth a look, not as a farm
 - **Disposable emails**: signups from mailinator & friends
 - **Shared / leaked keys**: one key used from many countries in a short window (often a sign it's been stolen and resold)
 - **Copy-paste bots**: different accounts sending the same prompts or templates
@@ -82,7 +82,7 @@ The checks:
 
 Every flag tells you *why* it fired. No black box.
 
-The report keeps two totals apart. **Likely abuse** is what comes from strong signals: everything a farm's linked accounts spent, the requests a copy-paste bot sent with its repeated prompts, and the requests from abroad on a key used from all over the world. **Worth a look** is for signals that often have an innocent explanation: a throwaway email (someone testing), accounts on one Gmail inbox (someone with a test account), whatever else a bot's accounts did, and spend spikes (a launch, a batch job). Each request is counted once, in the stronger of the two, so one account can have some of each.
+The report keeps two totals apart. **Likely abuse** is what comes from strong signals: everything a farm's accounts spent (5+ accounts on one device or network), the requests a copy-paste bot sent with its repeated prompts, and the requests from abroad on a key used from all over the world. **Worth a look** is for signals that often have an innocent explanation: a throwaway email (someone testing), accounts on one Gmail inbox (someone with a test account), whatever else a bot's accounts did, and spend spikes (a launch, a batch job). Each request is counted once, in the stronger of the two, so one account can have some of each.
 
 Neither total is money you've lost. They're what the requests behind the signals cost, and someone still has to look at them to say if it was abuse.
 

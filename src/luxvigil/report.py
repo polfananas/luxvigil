@@ -3,13 +3,15 @@
 Two totals, never mixed up:
 
   likely abuse    strong signals that rarely have an innocent explanation
-                  - account farms: every request from the linked accounts
+                  - account farms: every request from the accounts on a device or
+                    network shared by min_farm or more
                   - shared keys: the requests from a known country other than the key's home
                   - copy-paste bots: the requests that sent the repeated prompts
 
   worth a look    weak signals that often do have one
                   - a throwaway email (devs testing, privacy nerds)
                   - accounts on one Gmail inbox (someone with a test account)
+                  - chained farms: accounts linked only by small shares in a chain
                   - the rest of what copy-paste bot accounts did
                   - spend spikes (a launch, a batch job, a big customer)
 
@@ -156,12 +158,14 @@ def build_report(rows, min_farm=5, min_countries=5, config=None):
     )
 
     # 2. sort accounts by how strong the evidence against them is
-    farm_accounts = {a for farm in report.farms for a in farm.accounts}  # whole traffic is likely abuse
+    # whole traffic is likely abuse, but only for direct farms (see farms.py)
+    farm_accounts = {a for farm in report.farms if not farm.chained for a in farm.accounts}
     bot_of = {a: bot for bot in report.bots for a in bot.accounts}  # the repeated prompts are likely abuse
     # whole traffic worth a look: a throwaway email, a shared inbox, or whatever
     # a bot account sent besides the repeated prompts
     weak = set(report.emails.accounts) if report.emails else set()
     weak |= {a for g in report.aliases for a in g.accounts}
+    weak |= {a for farm in report.farms if farm.chained for a in farm.accounts}
     weak |= set(bot_of)
 
     away = {k.key: k.home_country for k in report.keys}  # leaked key -> its home country
@@ -360,12 +364,22 @@ def _render(report):
     out += _summary(report)
     out.append("")
 
-    if report.farms:
-        n = sum(len(f.accounts) for f in report.farms)
-        out.append(f"  🚨 {_plural(len(report.farms), 'account farm')}, {n:,} accounts")
-        out += _top(report.farms, lambda f: f"     - {f.why}  ·  {f.requests:,} requests{_usd(report, f.cost_usd)}")
+    def farm_line(f):
+        return f"     - {f.why}  ·  {f.requests:,} requests{_usd(report, f.cost_usd)}"
+
+    direct = [f for f in report.farms if not f.chained]
+    chained = [f for f in report.farms if f.chained]
+    if direct:
+        n = sum(len(f.accounts) for f in direct)
+        out.append(f"  🚨 {_plural(len(direct), 'account farm')}, {n:,} accounts")
+        out += _top(direct, farm_line)
     else:
         out.append(_nothing(report, "account farms"))
+    if chained:
+        n = sum(len(f.accounts) for f in chained)
+        out.append(f"  🔗 {_plural(len(chained), 'chain')} of accounts sharing devices or networks, {n:,} accounts "
+                   "(no single one shared by many, worth a look)")
+        out += _top(chained, farm_line)
 
     if report.emails:
         e = report.emails

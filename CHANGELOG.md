@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- spend spikes: a day with requests that have no cost no longer counts as a $0 day. It never sets
+  the usual spend, so three days with missing costs and then a normal day isn't a "spike" anymore.
+  A day can still spike on its known costs alone, and the report says "at least" when that happens
+- JSON: spend spikes are always `"severity": "review"`, matching the totals (before, a spike on an
+  account with likely abuse said "likely" while its money was counted as worth a look).
+  New `evidence.some_costs_missing`
+- account farms: a farm needs one device or network with `--min-farm` accounts or more on it.
+  Accounts only linked in a chain of smaller shares (a family computer, a support agent logging in on
+  customers' laptops) are reported as a chain, worth a look, not as likely abuse. Accounts that hang
+  off a farm only through smaller shares are listed with it (`evidence.linked_accounts`) but not
+  counted in it. New `evidence.chained` and `evidence.largest_share`; chained farms have
+  `"severity": "review"`
+
 ## 0.2.0
 
 - `--format litellm`: read LiteLLM spend logs as they come, from the API (JSON) or the database (CSV).

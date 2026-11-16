@@ -99,11 +99,17 @@ def to_dict(report, notes=()):
 
     # strong signals first: these count towards "likely abuse"
     for f in report.farms:
+        # direct: one device or network with min_farm accounts on it. Chained: only small
+        # shares linking up in a chain, which innocent setups do too (see farms.py)
         findings.append(_finding(
-            "account_farm", "likely", f.why, f.accounts, f.requests, f.cost_usd,
+            "account_farm", "review" if f.chained else "likely", f.why, f.accounts, f.requests, f.cost_usd,
             {
                 "shared_devices": f.devices,
                 "shared_networks": f.networks,
+                "chained": f.chained,
+                "largest_share": f.largest_share,  # most accounts on any one device or network
+                # linked to the farm only through smaller shares, not in accounts or cost
+                "linked_accounts": f.linked,
                 "first_seen": _date(f.first_seen),  # when the farm was active
                 "last_seen": _date(f.last_seen),
             },
@@ -151,14 +157,16 @@ def to_dict(report, notes=()):
             *sorted(g.accounts), known=known,
         ))
     for s in report.spikes:
-        # a spike on an account that's already likely abuse (e.g. a leaked key) is likely too
-        severity = "likely" if s.account in report.flagged_accounts else "review"
+        # always "review", like in the totals: the extra spend of a spike is worth a look.
+        # If the account also has likely abuse (say a leaked key), that's its own finding
         findings.append(_finding(
-            "spend_spike", severity, s.why, [s.account], s.requests, s.cost_usd,
+            "spend_spike", "review", s.why, [s.account], s.requests, s.cost_usd,
             {
                 "usual_daily_usd": _money(s.usual_daily),
                 "peak_daily_usd": _money(s.peak_daily),
                 "days": [str(d) for d in s.days],
+                # some requests on those days had no cost: the real extra was higher
+                "some_costs_missing": s.incomplete,
             },
             s.account, s.first_day, known=known,
         ))

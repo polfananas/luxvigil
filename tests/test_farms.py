@@ -3,6 +3,8 @@ from datetime import datetime, timezone
 import pytest
 
 from luxvigil.checks.farms import find_farms, network_of
+from luxvigil.export import to_dict
+from luxvigil.report import build_report, render_text
 from luxvigil.generate import generate, write_csv
 from luxvigil.schema import Request, load_logs
 
@@ -53,12 +55,52 @@ def test_small_group_is_not_a_farm():
 
 
 def test_links_chain_across_device_and_network():
-    # a,b share a device; b,c,d,e share a network (and all look off) -> one farm of 5
+    # a,b share a device; b,c,d,e share a network (and all look off) -> 5 accounts in a chain,
+    # but nothing has 5 on it by itself, so it's a chained group, not a direct farm
     rows = [req("a", ip="9.9.9.9", device="d1"), req("b", ip="5.5.5.1", device="d1", email="b@mailinator.com")]
     rows += [req(x, ip=f"5.5.5.{i + 2}", email=f"{x}@mailinator.com") for i, x in enumerate("cde")]
     (farm,) = find_farms(rows)
     assert farm.accounts == ["a", "b", "c", "d", "e"]
     assert farm.devices == ["d1"] and farm.networks == ["5.5.5.0/24"]
+    assert farm.chained and farm.largest_share == 4
+
+
+def test_one_person_on_three_family_computers_is_not_a_farm():
+    # three unrelated couples, each on their own computer, and one support agent who
+    # logged in on all three: 7 accounts in a chain, at most 3 on any one device
+    rows = []
+    for i in range(3):
+        rows += [req(f"p{i}a", device=f"home{i}"), req(f"p{i}b", device=f"home{i}"), req("support", device=f"home{i}")]
+    (group,) = find_farms(rows)
+    assert group.chained and len(group.accounts) == 7 and group.largest_share == 3
+    report = build_report(rows)
+    assert report.abuse_cost == 0 and not report.flagged_accounts  # worth a look at most
+    assert report.review_cost == pytest.approx(0.09)
+    (finding,) = to_dict(report)["findings"]
+    assert finding["severity"] == "review" and finding["evidence"]["chained"]
+    assert "chained (at most 3 on any one)" in finding["summary"]
+
+
+def test_a_bridge_doesnt_pull_strangers_into_a_farm():
+    # 6 accounts on one device is a farm. One of them also logged in on a home laptop
+    # with someone else: that someone is linked, not part of the farm or its cost
+    rows = [req(f"f{i}", device="farm-phone", cost=1.0) for i in range(6)]
+    rows += [req("f0", device="laptop"), req("mom", device="laptop", cost=50.0)]
+    (farm,) = find_farms(rows)
+    assert farm.accounts == [f"f{i}" for i in range(6)] and not farm.chained
+    assert farm.linked == ["mom"]
+    report = build_report(rows)
+    assert "mom" not in report.flagged_accounts
+    assert report.abuse_cost == pytest.approx(6.01)  # the 6 farm accounts, not mom's $50
+    assert "(+1 more linked through smaller shares, not counted)" in "\n".join(render_text(report))
+
+
+def test_a_farm_rotating_through_devices_is_one_farm():
+    # 5 accounts per device, and accounts that moved between devices: one direct farm
+    rows = [req(f"a{i}", device="d1") for i in range(5)] + [req(f"b{i}", device="d2") for i in range(5)]
+    rows += [req("a0", device="d2")]
+    (farm,) = find_farms(rows)
+    assert not farm.chained and len(farm.accounts) == 10 and farm.devices == ["d1", "d2"]
 
 
 def test_empty_device_doesnt_link():
