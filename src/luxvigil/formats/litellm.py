@@ -144,6 +144,9 @@ def read_litellm(path, notes=None):
             identity[source] += 1
         spend = _get(record, "spend")
         rows.append({
+            # not one of our columns, but it makes two different requests that look alike
+            # (same user, second and tokens) different rows, so they're not taken as duplicates
+            "request_id": _get(record, "request_id"),
             "timestamp": _get(record, "startTime"),
             "account_id": account,
             "api_key_id": key,

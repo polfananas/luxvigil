@@ -18,6 +18,15 @@
   instead of a Python traceback. An empty log says "nothing to scan" instead of "no costs"
 - errors and notes escape control characters from your logs (an ESC or BEL in a bad cell could
   retitle or recolor the terminal) and cut long values short
+- copy-paste bots: a request only counts as the signal if that account itself repeated that prompt.
+  Bots that share several templates are one group, and an account sending another member's template
+  once (say a $100 request) was counted as signal: $130 reported where the repeated prompts were $30
+- disposable emails and network farms look at every email an account used, not the first one in the
+  file, so the same logs in a different order give the same answer
+- exact duplicate rows (every column the same, request ids included) are counted once, so a doubled
+  export can't create a bot or double the cost. `--keep-duplicates` keeps them. LiteLLM's request_id
+  tells apart two requests that look identical
+- a CSV row with more values than the header is a bad row (it crashed before)
 
 ## 0.2.0
 

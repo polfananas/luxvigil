@@ -202,7 +202,8 @@ def resolve_columns(fieldnames, mapping=None):
 FORMATS = ["csv", "litellm"]
 
 
-def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None, skip_bad=False, fmt="csv"):
+def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None, skip_bad=False, fmt="csv",
+              keep_duplicates=False):
     """Read a log file and return a list of Request. Fails loudly on bad input.
 
     mapping: {our_column: their_column} for files that name things differently.
@@ -210,6 +211,11 @@ def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None, ski
     notes: pass a list to get told which columns were matched automatically, and about duplicates etc.
     skip_bad: skip rows that don't parse instead of stopping (you're told how many and why).
     fmt: "csv" for our own columns (the default), or the export of a tool we know, like "litellm".
+    keep_duplicates: keep rows that are an exact copy of an earlier one. By default they're
+    dropped: a row identical in every column (request id and timestamp included) is almost
+    always the same request exported twice, and counting it twice can push an account over a
+    threshold and doubles its cost. If your logs have no request id and really do log
+    identical requests in the same second, keep them.
     """
     if fmt == "litellm":
         if mapping:
@@ -219,7 +225,8 @@ def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None, ski
         fieldnames, records = read_litellm(path, notes)
         if not records:
             raise LogFormatError("no requests in this LiteLLM export")
-        return _read_rows(fieldnames, records, None, price_in, price_out, notes, skip_bad, unit="request")
+        return _read_rows(fieldnames, records, None, price_in, price_out, notes, skip_bad, "request",
+                          keep_duplicates)
     if fmt != "csv":
         raise LogFormatError(f"unknown format '{fmt}', use one of: {', '.join(FORMATS)}")
 
@@ -231,10 +238,11 @@ def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None, ski
             raise LogFormatError("the file is empty")
         f.seek(0)
         reader = csv.DictReader(f, delimiter=_separator(first_line))
-        return _read_rows(reader.fieldnames, reader, mapping, price_in, price_out, notes, skip_bad, unit="line")
+        return _read_rows(reader.fieldnames, reader, mapping, price_in, price_out, notes, skip_bad, "line",
+                          keep_duplicates)
 
 
-def _read_rows(fieldnames, records, mapping, price_in, price_out, notes, skip_bad, unit):
+def _read_rows(fieldnames, records, mapping, price_in, price_out, notes, skip_bad, unit, keep_duplicates=False):
     """Check and turn rows (dicts) into Requests. `unit` is how errors point at a row: line or request."""
     cols, found = resolve_columns(fieldnames, mapping)
     if notes is not None:
@@ -273,6 +281,16 @@ def _read_rows(fieldnames, records, mapping, price_in, price_out, notes, skip_ba
         try:
             if None in r.values():
                 raise ValueError("this row has fewer columns than the header")
+            if None in r:  # csv puts the extra values under a None key
+                raise ValueError("this row has more columns than the header")
+            # the same request logged twice: count it once (see load_logs). Only a hash of
+            # each row is kept, keeping the rows themselves would double memory on big files
+            fingerprint = hash(tuple(r.values()))
+            if fingerprint in seen:
+                duplicates += 1
+                if not keep_duplicates:
+                    continue
+            seen.add(fingerprint)
             if not r[cols["account_id"]].strip():
                 raise ValueError("account_id is empty")
             tin = _tokens(r[cols["input_tokens"]], "input_tokens")
@@ -321,11 +339,6 @@ def _read_rows(fieldnames, records, mapping, price_in, price_out, notes, skip_ba
             continue
 
         # 2. smaller oddities: count them, don't stop
-        # only keep a hash of each row, keeping the rows themselves doubles memory on big files
-        fingerprint = hash(tuple(r.values()))
-        if fingerprint in seen:
-            duplicates += 1
-        seen.add(fingerprint)
         if "ip" in cols and not _valid_ip(rows[-1].ip):
             bad_ips += 1
 
@@ -334,8 +347,10 @@ def _read_rows(fieldnames, records, mapping, price_in, price_out, notes, skip_ba
         if skipped:
             notes.append(f"skipped {skipped:,} bad row{'s' if skipped != 1 else ''}, the first one was {first_error}")
         if duplicates:
-            notes.append(f"{duplicates:,} duplicate row{'s' if duplicates != 1 else ''} (exact copy of an earlier one), "
-                         "check your export isn't doubled")
+            what = ("kept, because of --keep-duplicates" if keep_duplicates
+                    else "left out, they'd count the same request twice")
+            notes.append(f"{duplicates:,} duplicate row{'s' if duplicates != 1 else ''} (exact copy of an earlier one, "
+                         f"every column the same), {what}. Check your export isn't doubled")
         if unknown_cost and "cost_usd" in cols:
             notes.append(f"{unknown_cost:,} of {len(rows):,} requests have no cost in the logs: they count as "
                          "unknown, not as free, and the dollar totals only cover the rest")
