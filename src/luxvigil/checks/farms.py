@@ -55,7 +55,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from functools import lru_cache
 
-from luxvigil.checks.emails import disposable_domain, load_disposable_domains
+from luxvigil.checks.emails import disposable_by_account, load_disposable_domains
 from luxvigil.checks.groups import Groups
 from luxvigil.checks.prompts import find_prompt_bots
 
@@ -115,13 +115,8 @@ def suspect_accounts(requests, bots=None):
     Only these can be linked through a shared network (see the top of the file).
     `bots` lets the caller pass find_prompt_bots() if it already ran it.
     """
-    domains = load_disposable_domains()
-
-    # one email per account is enough, no need to check it on every request
-    first_email = {}
-    for r in requests:
-        first_email.setdefault(r.account_id, r.email)
-    out = {acc for acc, email in first_email.items() if disposable_domain(email, domains)}
+    # any of the account's emails, so the order of the rows doesn't matter
+    out = set(disposable_by_account(requests, load_disposable_domains()))
 
     for bot in find_prompt_bots(requests) if bots is None else bots:
         out.update(bot.accounts)

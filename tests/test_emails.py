@@ -52,3 +52,28 @@ def test_finds_the_planted_farm(tmp_path):
     write_csv(rows, path)
     report = find_disposable_emails(load_logs(path))
     assert set(report.accounts) == set(planted["farm_big"])
+
+
+def test_the_order_of_the_rows_doesnt_change_the_answer():
+    # 5 accounts on one network, each with a normal and a throwaway email. Before, only the
+    # first email in the file counted: normal first meant no farm, throwaway first meant a farm
+    import random
+    from datetime import datetime, timezone
+
+    from luxvigil.export import to_dict
+    from luxvigil.report import build_report
+    from luxvigil.schema import Request
+
+    def req(k, email, hour):
+        return Request(datetime(2026, 10, 1, hour, tzinfo=timezone.utc), f"u{k}", email, "", f"5.5.5.{k}", "",
+                       "", f"p{k}{hour}", 10, 10, 1.0)
+
+    rows = [req(k, f"u{k}@gmail.com", 1) for k in range(5)] + [req(k, f"u{k}@mailinator.com", 2) for k in range(5)]
+    results = set()
+    for seed in range(5):
+        random.Random(seed).shuffle(rows)
+        data = to_dict(build_report(rows))
+        results.add(tuple(sorted((f["id"], f["severity"], f["cost_usd"]) for f in data["findings"])))
+    assert len(results) == 1
+    (findings,) = results
+    assert {f[0].split("-")[0] for f in findings} == {"account_farm", "disposable_emails"}

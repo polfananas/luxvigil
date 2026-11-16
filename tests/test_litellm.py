@@ -146,3 +146,12 @@ def test_a_key_that_isnt_a_litellm_hash_never_shows(tmp_path, raw, capsys):
         main(args)
         out = capsys.readouterr()
         assert raw not in out.out and raw not in out.err
+
+
+def test_two_requests_in_the_same_second_are_two_but_a_repeated_one_is_one(tmp_path):
+    a, b = spend_log(1, end_user="u"), spend_log(1, end_user="u")
+    b["request_id"] = "req-other"  # same everything, different request
+    notes = []
+    rows = load_logs(write_json(tmp_path, [a, b, dict(a)]), fmt="litellm", notes=notes)
+    assert len(rows) == 2  # a was exported twice
+    assert any("1 duplicate row" in n for n in notes)

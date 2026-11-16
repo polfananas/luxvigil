@@ -120,3 +120,16 @@ def test_without_prompt_chars_nothing_changes():
     rows = [req(f"u{i}", "hash_of_go_on") for i in range(6) for _ in range(4)]
     (bot,) = find_prompt_bots(rows)
     assert len(bot.accounts) == 6
+
+
+def test_only_an_accounts_own_repeated_prompts_count_as_the_signal():
+    # two cohorts of 5, one on template A and one on B, joined because a0 repeats both.
+    # b0 also sends A once, a $100 request: it's not something b0 repeated, so it's not signal
+    rows = [req(f"a{k}", "A", cost=1.0) for k in range(5) for _ in range(3)]
+    rows += [req(f"b{k}", "B", cost=1.0) for k in range(5) for _ in range(3)]
+    rows += [req("a0", "B", cost=1.0) for _ in range(3)]
+    rows += [req("b0", "A", cost=100.0)]
+    (bot,) = find_prompt_bots(rows)
+    assert len(bot.accounts) == 10
+    assert (bot.signal_requests, bot.signal_cost_usd) == (33, 33.0)
+    assert bot.cost_usd == 133.0  # still part of what the accounts spent, just not the signal

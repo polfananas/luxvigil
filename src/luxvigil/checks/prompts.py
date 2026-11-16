@@ -45,7 +45,7 @@ Limits worth knowing:
 """
 
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from luxvigil.checks.groups import Groups
 
@@ -59,13 +59,14 @@ class PromptBot:
     cost_usd: float = 0.0  # what all of those cost
     signal_requests: int = 0  # only the requests that sent one of the repeated prompts
     signal_cost_usd: float = 0.0
+    # (account, prompt) pairs where that account itself sent that prompt min_repeats+ times
+    qualifying: set = field(default_factory=set, repr=False, compare=False)
 
     def is_signal(self, r):
-        """Is this request one of the repeated prompts (by one of this bot's accounts)?"""
-        return r.prompt_hash in self._prompts and r.account_id in self._accounts
-
-    def __post_init__(self):
-        self._prompts, self._accounts = set(self.prompts), set(self.accounts)
+        """Is this request one of the repeated prompts, sent by an account that repeated
+        that same prompt itself? Being in the group isn't enough: an account that sent
+        another member's template once (maybe a big, expensive request) is not the signal."""
+        return (r.account_id, r.prompt_hash) in self.qualifying
 
     @property
     def why(self):
@@ -119,6 +120,7 @@ def find_prompt_bots(requests, min_accounts=5, min_repeats=3, min_share=0.2, min
                 accounts=sorted(accs),
                 prompts=prompts,
                 repeats=sum(sum(repeated[p].values()) for p in prompts),
+                qualifying={(acc, p) for p in prompts for acc in repeated[p]},
             )
         )
 

@@ -3,6 +3,7 @@ import csv
 import pytest
 
 from luxvigil.cli import main
+from luxvigil.report import build_report
 from luxvigil.schema import COLUMNS, LogFormatError, load_logs
 
 
@@ -58,9 +59,36 @@ def test_duplicates_and_bad_ips_are_reported(tmp_path):
     notes = []
     rows = load_logs(write(tmp_path, {}, {}, {"account_id": "b", "ip": "nope"}, {"account_id": "c", "ip": ""}),
                      notes=notes)
-    assert len(rows) == 4  # nothing dropped, just flagged
-    assert any("1 duplicate row (" in n for n in notes)
+    assert len(rows) == 3  # the exact copy is counted once
+    assert any("1 duplicate row (" in n and "left out" in n for n in notes)
     assert any("2 rows without a valid IP" in n for n in notes)
+
+
+def test_duplicates_dont_make_a_bot_or_double_the_cost(tmp_path):
+    # 5 accounts sending one template once each, and the export got tripled: still 5 requests,
+    # no account repeated anything, no bot. With --keep-duplicates you get the old behaviour
+    rows = [{"account_id": f"u{k}", "prompt_hash": "template", "cost_usd": "0.2"} for k in range(5)]
+    path = write(tmp_path, *(rows * 3))
+    report = build_report(load_logs(path))
+    assert (report.requests, report.bots) == (5, [])
+    assert report.total_cost == pytest.approx(1.0)
+    kept = build_report(load_logs(path, keep_duplicates=True))
+    assert kept.requests == 15 and kept.bots
+
+
+def test_rows_that_differ_only_in_an_extra_column_are_not_duplicates(tmp_path):
+    # say a request_id column we don't use: two requests in the same second are still two
+    rows = [{"account_id": "a", "request_id": "r1"}, {"account_id": "a", "request_id": "r2"}]
+    assert len(load_logs(write(tmp_path, *rows, header=[*COLUMNS, "request_id"]))) == 2
+
+
+def test_a_row_with_more_columns_than_the_header_is_a_bad_row(tmp_path):
+    path = tmp_path / "logs.csv"
+    path.write_text("timestamp,account_id,input_tokens,output_tokens,cost_usd\n"
+                    "2026-01-01T00:00:00Z,a,1,1,1,EXTRA\n2026-01-01T00:00:00Z,b,1,1,1\n")
+    with pytest.raises(LogFormatError, match="more columns than the header"):
+        load_logs(path)
+    assert [r.account_id for r in load_logs(path, skip_bad=True)] == ["b"]
 
 
 def test_clean_file_has_no_warnings(tmp_path):
