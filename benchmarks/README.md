@@ -294,8 +294,10 @@ Share of the (estimated) spend flagged as likely abuse, as the bot check changed
 The last column is a change in what gets counted, not in what gets found:
 up to the length rule, everything a bot's accounts sent was likely abuse. From
 0.2.0 only the requests with the repeated prompts are, and the rest of what
-those accounts did is "worth a look". On WildChat-1M that's $699 of likely
-abuse plus $2,362 worth a look, from the same 14 groups. We didn't keep the
+those accounts did is "worth a look". On WildChat-1M that's $675 of likely
+abuse plus $2,386 worth a look, from the same 14 groups ($699 and $2,362 in
+0.2.0, which also counted a request as repeated when another account in the
+group was the one repeating it). We didn't keep the
 4.8M data around to re-run that column.
 
 On WildChat-1M, 14 bot groups (298 accounts) are left, and nearly all of them
