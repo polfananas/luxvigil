@@ -64,19 +64,30 @@ def disposable_domain(email, domains):
     return None
 
 
+def disposable_by_account(requests, domains):
+    """account -> its throwaway domain, for accounts that used one with any of their emails.
+
+    If an account used more than one, the alphabetically first wins, so it's the
+    same answer whatever order the logs come in.
+    """
+    checked, found = {}, {}
+    for r in requests:
+        if r.email not in checked:
+            checked[r.email] = disposable_domain(r.email, domains)
+        domain = checked[r.email]
+        if domain and (r.account_id not in found or domain < found[r.account_id]):
+            found[r.account_id] = domain
+    return found
+
+
 def find_disposable_emails(requests, domains=None):
     """Return a DisposableEmails report, or None if nobody used one."""
     domains = load_disposable_domains() if domains is None else domains
 
-    # one email per account is enough: the first one we see
-    account_domain = {}
-    all_accounts = set()
-    for r in requests:
-        all_accounts.add(r.account_id)
-        if r.account_id not in account_domain:
-            account_domain[r.account_id] = disposable_domain(r.email, domains)
-
-    flagged = {acc: d for acc, d in account_domain.items() if d}
+    # every email an account used counts, not just the first one in the file: the
+    # order of the rows shouldn't change the answer. Each email is only checked once
+    flagged = disposable_by_account(requests, domains)
+    all_accounts = {r.account_id for r in requests}
     if not flagged:
         return None
 
