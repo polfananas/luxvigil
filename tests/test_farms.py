@@ -72,27 +72,28 @@ def test_one_person_on_three_family_computers_is_not_a_farm():
     for i in range(3):
         rows += [req(f"p{i}a", device=f"home{i}"), req(f"p{i}b", device=f"home{i}"), req("support", device=f"home{i}")]
     (group,) = find_farms(rows)
-    assert group.chained and len(group.accounts) == 7 and group.largest_share == 3
+    assert group.chained and len(group.accounts) == 7 and group.largest_share == 3 and not group.likely
     report = build_report(rows)
     assert report.abuse_cost == 0 and not report.flagged_accounts  # worth a look at most
     assert report.review_cost == pytest.approx(0.09)
     (finding,) = to_dict(report)["findings"]
-    assert finding["severity"] == "review" and finding["evidence"]["chained"]
-    assert "chained (at most 3 on any one)" in finding["summary"]
+    assert finding["severity"] == "review" and finding["evidence"]["relation"] == "chained"
+    assert "linked in a chain over 3 shared devices (at most 3 on any one)" in finding["summary"]
 
 
 def test_a_bridge_doesnt_pull_strangers_into_a_farm():
-    # 6 accounts on one device is a farm. One of them also logged in on a home laptop
-    # with someone else: that someone is linked, not part of the farm or its cost
-    rows = [req(f"f{i}", device="farm-phone", cost=1.0) for i in range(6)]
-    rows += [req("f0", device="laptop"), req("mom", device="laptop", cost=50.0)]
+    # 6 accounts with throwaway emails on one device is a farm. One of them also logged in
+    # on a home laptop with someone else: that someone is related, not part of the farm or its cost
+    rows = [req(f"f{i}", device="farm-phone", cost=1.0, email=f"f{i}@mailinator.com") for i in range(6)]
+    rows += [req("f0", ip="9.9.9.9", device="laptop", email="f0@mailinator.com"),
+             req("mom", ip="9.9.9.9", device="laptop", cost=50.0)]
     (farm,) = find_farms(rows)
-    assert farm.accounts == [f"f{i}" for i in range(6)] and not farm.chained
+    assert farm.accounts == [f"f{i}" for i in range(6)] and farm.likely
     assert farm.linked == ["mom"]
     report = build_report(rows)
     assert "mom" not in report.flagged_accounts
-    assert report.abuse_cost == pytest.approx(6.01)  # the 6 farm accounts, not mom's $50
-    assert "(+1 more linked through smaller shares, not counted)" in "\n".join(render_text(report))
+    assert report.abuse_cost == pytest.approx(6.0)  # the farm's requests on its phone, not mom's $50
+    assert "(+1 more related, not counted)" in "\n".join(render_text(report))
 
 
 def test_a_farm_rotating_through_devices_is_one_farm():

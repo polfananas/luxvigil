@@ -50,12 +50,13 @@ $ luxvigil demo
 🕯️ luxvigil · 2026-10-01 to 2026-10-30 (UTC)
 
   11,405 requests · 285 accounts · $324.60 spent
-  💰 ~$195.25 is likely abuse (60% of your spend), 86 accounts
-  🔎 ~$22.76 more is worth a look, 1 account (signals that can have an innocent explanation)
+  💰 ~$162.86 is likely abuse (50% of your spend), 61 accounts
+  🔎 ~$55.15 more is worth a look, 26 accounts (signals that can have an innocent explanation)
 
-  🚨 2 account farms, 85 accounts
-     - 60 accounts on 3 shared devices + 1 shared network (185.220.101.0/24, with throwaway emails or template prompts)  ·  3,368 requests  ·  ~$144.89
-     - 25 accounts on 1 shared device  ·  968 requests  ·  ~$32.39
+  🚨 1 account farm, 60 accounts
+     - 60 accounts first seen on 3 shared devices + 1 shared network (185.220.101.0/24) within 21 days, all with throwaway emails or bot prompts  ·  3,368 requests on them  ·  ~$144.89
+  🔗 1 group of accounts sharing devices or networks, 25 accounts (worth a look)
+     - 25 accounts first seen on 1 shared device within 20 days, nothing else off about them (a class or a kiosk looks the same)  ·  968 requests  ·  ~$32.39
   📧 60 of 285 accounts (21%) use throwaway emails: mailinator.com (16), sharklasers.com (12), 10minutemail.com (12)
      3,368 requests  ·  ~$144.89
   🔑 1 key used from many countries at once (shared or leaked?)
@@ -67,13 +68,14 @@ $ luxvigil demo
      - acc_0100 went from ~$0.02/day to $7.99/day (368x) on 2026-10-28 to 2026-10-30  ·  302 requests  ·  ~$22.76 extra
      - acc_0007 went from ~$0.02/day to $6.26/day (266x) on 2026-10-23 to 2026-10-25  ·  402 requests  ·  ~$17.93 extra
 
+  "First seen" is first seen in these logs, which start on 2026-10-01: accounts may have been there before.
   The same account can show up in more than one check. The totals at the top count it once.
   The $ is what the flagged requests cost, not a confirmed loss: check before you act.
 ```
 
 The checks:
 
-- **Account farms**: lots of accounts on the same device, or on the same network when they also use throwaway emails or template prompts (a shared network alone proves nothing: think mobile carriers and universities). Accounts only linked in a chain of small shares (a family computer here, a support agent's login there) show up as a chain worth a look, not as a farm
+- **Account farms**: 5+ accounts first seen on the same device within a few weeks (or on the same network, when they also use throwaway emails or template prompts: a shared network alone proves nothing, think mobile carriers and universities). It's only likely abuse when at least half of them also have a throwaway email or send a bot's prompts, since a class on the same lab computers looks the same. A device shared over months (a library computer, a second-hand phone) or a chain of small shares (a family computer here, a support agent's login there) shows up as worth a look
 - **Disposable emails**: signups from mailinator & friends
 - **Shared / leaked keys**: one key used from many countries in a short window (often a sign it's been stolen and resold)
 - **Copy-paste bots**: different accounts sending the same prompts or templates
@@ -82,7 +84,7 @@ The checks:
 
 Every flag tells you *why* it fired. No black box.
 
-The report keeps two totals apart. **Likely abuse** is what comes from strong signals: everything a farm's accounts spent (5+ accounts on one device or network), the requests a copy-paste bot sent with its repeated prompts, and the requests from abroad on a key used from all over the world. **Worth a look** is for signals that often have an innocent explanation: a throwaway email (someone testing), accounts on one Gmail inbox (someone with a test account), whatever else a bot's accounts did, and spend spikes (a launch, a batch job). Each request is counted once, in the stronger of the two, so one account can have some of each.
+The report keeps two totals apart. **Likely abuse** is what comes from strong signals: what a farm's accounts did on the devices and networks they share, the requests a copy-paste bot sent with its repeated prompts, and the requests from abroad on a key used from all over the world. **Worth a look** is for signals that often have an innocent explanation: a throwaway email (someone testing), accounts on one Gmail inbox (someone with a test account), whatever else a bot's or a farm's accounts did, accounts sharing a device that don't add up to a farm, and spend spikes (a launch, a batch job). Each request is counted once, in the stronger of the two, so one account can have some of each.
 
 Neither total is money you've lost. They're what the requests behind the signals cost, and someone still has to look at them to say if it was abuse.
 
@@ -90,7 +92,7 @@ Neither total is money you've lost. They're what the requests behind the signals
 
 The report doesn't ban anyone, you do. What to check before acting on each finding:
 
-- **🚨 Account farms**: look at when the accounts signed up and how they pay. Real users rarely share a device. The devices and networks listed are what links them, start there: one shared office laptop can pull two unrelated groups together.
+- **🚨 Account farms** and **🔗 accounts sharing devices**: look at when the accounts signed up and how they pay. "First seen" means first seen in your logs, not when the account was created, so if your export starts in the middle of things, check further back. The devices and networks listed are what links them, start there: one shared office laptop can pull two unrelated groups together.
 - **🔑 Keys used from many countries**: ask the owner. A customer with servers in several regions looks exactly the same. If it's not them, rotate the key.
 - **🤖 Copy-paste bots**: look at the prompt behind the hash. Someone using your free tier as an API, or a legit integration sending a fixed template?
 - **📧 Throwaway emails and 📮 shared Gmail inboxes**: on their own, mostly people testing. They matter when the same accounts also show up in a stronger finding.
@@ -185,7 +187,7 @@ Want to feed it into something else? `--json` prints the same report as data. Ev
 }
 ```
 
-No raw emails or prompts end up in it, only the ids and hashes already in your logs. It also has the settings used, how many requests each check had data for, and the period (in UTC), so two runs can be compared. Dollar amounts are `null` when the logs have no costs. An id is built from the accounts in the finding, so if a farm gains or loses an account, it gets a new id: it's not a campaign tracker. The format is versioned (`"format": 2` since 0.2.0), see the [changelog](https://github.com/polfananas/luxvigil/blob/main/CHANGELOG.md) for what changed.
+No raw emails or prompts end up in it, only the ids and hashes already in your logs. It also has the settings used, how many requests each check had data for, and the period (in UTC), so two runs can be compared. Dollar amounts are `null` when the logs have no costs. An id is built from the accounts in the finding, so if a farm gains or loses an account, it gets a new id: it's not a campaign tracker. The format is versioned (`"format": 3` since 0.3.0), see the [changelog](https://github.com/polfananas/luxvigil/blob/main/CHANGELOG.md) for what changed.
 
 ### Bad rows
 
@@ -204,9 +206,12 @@ devices = ["kiosk-01"]
 accounts = ["qa_*"]
 emails = ["*@yourcompany.com"]
 keys = ["key_ci_*"]
+
+[farms]
+window_days = 30  # how close together accounts have to show up on a device (0 = no limit)
 ```
 
-Trusted networks and devices are still checked, they just never link accounts into a farm. Ignored accounts are skipped completely, but still count towards your total spend.
+Trusted networks and devices are still checked, they just never link accounts into a farm. Ignored accounts are skipped completely, but still count towards your total spend. `window_days` is 30 by default: a reasonable guess for how fast farms sign up, not a measured number (see [benchmarks/](https://github.com/polfananas/luxvigil/tree/main/benchmarks) for what changing it does on the one labeled dataset we have).
 
 No logs handy? `luxvigil demo` scans fake ones for you, or make your own to play with:
 

@@ -3,15 +3,18 @@
 Two totals, never mixed up:
 
   likely abuse    strong signals that rarely have an innocent explanation
-                  - account farms: every request from the accounts on a device or
-                    network shared by min_farm or more
+                  - account farms: the requests made on the shared devices or networks,
+                    when min_farm accounts showed up on one within a few weeks and
+                    at least half of them have something else off (see farms.py)
                   - shared keys: the requests from a known country other than the key's home
                   - copy-paste bots: the requests that sent the repeated prompts
 
   worth a look    weak signals that often do have one
                   - a throwaway email (devs testing, privacy nerds)
                   - accounts on one Gmail inbox (someone with a test account)
-                  - chained farms: accounts linked only by small shares in a chain
+                  - accounts sharing devices or networks that don't add up to a likely
+                    farm (a chain, spread over months, or nothing else off), and
+                    whatever else a likely farm's accounts did
                   - the rest of what copy-paste bot accounts did
                   - spend spikes (a launch, a batch job, a big customer)
 
@@ -32,7 +35,7 @@ from dataclasses import dataclass, field
 
 from luxvigil.checks import find_disposable_emails, find_farms, find_prompt_bots, find_shared_keys, find_spikes
 from luxvigil.checks.aliases import find_gmail_aliases
-from luxvigil.checks.farms import suspect_accounts
+from luxvigil.checks.farms import DEFAULT_WINDOW_DAYS, suspect_accounts
 from luxvigil.checks.keys import is_away
 
 # the checks, in the order the report shows them
@@ -136,6 +139,7 @@ def build_report(rows, min_farm=5, min_countries=5, config=None):
     but still count towards the overall requests, accounts and spend.
     """
     all_rows = rows
+    window_days = config.farm_window_days if config else DEFAULT_WINDOW_DAYS
     if config:
         rows = [r for r in rows if not config.ignores(r)]
 
@@ -149,7 +153,7 @@ def build_report(rows, min_farm=5, min_countries=5, config=None):
         total_cost=sum(r.cost_usd for r in all_rows),
         first_seen=min((r.timestamp for r in all_rows), default=None),
         last_seen=max((r.timestamp for r in all_rows), default=None),
-        farms=find_farms(rows, min_accounts=min_farm, config=config, suspects=suspects),
+        farms=find_farms(rows, min_accounts=min_farm, config=config, suspects=suspects, window_days=window_days),
         emails=find_disposable_emails(rows),
         keys=find_shared_keys(rows, min_countries=min_countries),
         bots=bots,
@@ -158,20 +162,21 @@ def build_report(rows, min_farm=5, min_countries=5, config=None):
     )
 
     # 2. sort accounts by how strong the evidence against them is
-    # whole traffic is likely abuse, but only for direct farms (see farms.py)
-    farm_accounts = {a for farm in report.farms if not farm.chained for a in farm.accounts}
+    likely_farms = [farm for farm in report.farms if farm.likely]
+    farm_of = {a: farm for farm in likely_farms for a in farm.accounts}  # their requests on the shared stuff
     bot_of = {a: bot for bot in report.bots for a in bot.accounts}  # the repeated prompts are likely abuse
     # whole traffic worth a look: a throwaway email, a shared inbox, or whatever
     # a bot account sent besides the repeated prompts
     weak = set(report.emails.accounts) if report.emails else set()
     weak |= {a for g in report.aliases for a in g.accounts}
-    weak |= {a for farm in report.farms if farm.chained for a in farm.accounts}
+    weak |= {a for farm in report.farms for a in farm.accounts}  # the rest of what they did
     weak |= set(bot_of)
 
     away = {k.key: k.home_country for k in report.keys}  # leaked key -> its home country
 
     def is_likely(r):
-        if r.account_id in farm_accounts:
+        farm = farm_of.get(r.account_id)
+        if farm is not None and farm.is_signal(r):
             return True
         home = away.get(r.api_key_id)
         if home is not None and is_away(r, home):  # the same test the key check uses
@@ -227,7 +232,7 @@ def build_report(rows, min_farm=5, min_countries=5, config=None):
     report.known_cost_requests = sum(1 for r in all_rows if r.cost_known)
     report.coverage = _coverage(rows)
     report.skipped = _skipped_checks(rows, report.coverage, suspects)
-    report.settings = {"min_farm": min_farm, "min_countries": min_countries}
+    report.settings = {"min_farm": min_farm, "min_countries": min_countries, "farm_window_days": window_days}
     return report
 
 
@@ -367,21 +372,22 @@ def _render(report):
     out.append("")
 
     def farm_line(f):
-        return f"     - {f.why}  ·  {f.requests:,} requests{_usd(report, f.cost_usd)}"
+        what = f"{f.signal_requests:,} requests on them" if f.likely else f"{f.requests:,} requests"
+        return f"     - {f.why}  ·  {what}{_usd(report, f.signal_cost_usd if f.likely else f.cost_usd)}"
 
-    direct = [f for f in report.farms if not f.chained]
-    chained = [f for f in report.farms if f.chained]
-    if direct:
-        n = sum(len(f.accounts) for f in direct)
-        out.append(f"  🚨 {_plural(len(direct), 'account farm')}, {n:,} accounts")
-        out += _top(direct, farm_line)
+    likely = [f for f in report.farms if f.likely]
+    related = [f for f in report.farms if not f.likely]
+    if likely:
+        n = sum(len(f.accounts) for f in likely)
+        out.append(f"  🚨 {_plural(len(likely), 'account farm')}, {n:,} accounts")
+        out += _top(likely, farm_line)
     else:
         out.append(_nothing(report, "account farms"))
-    if chained:
-        n = sum(len(f.accounts) for f in chained)
-        out.append(f"  🔗 {_plural(len(chained), 'chain')} of accounts sharing devices or networks, {n:,} accounts "
-                   "(no single one shared by many, worth a look)")
-        out += _top(chained, farm_line)
+    if related:
+        n = sum(len(f.accounts) for f in related)
+        out.append(f"  🔗 {_plural(len(related), 'group')} of accounts sharing devices or networks, {n:,} accounts "
+                   "(worth a look)")
+        out += _top(related, farm_line)
 
     if report.emails:
         e = report.emails
@@ -430,6 +436,9 @@ def _render(report):
         out += coverage
 
     out.append("")
+    if any(f.earlier_use_unknown for f in report.farms):
+        out.append(f"  \"First seen\" is first seen in these logs, which start on {report.first_seen.date()}: "
+                   "accounts may have been there before.")
     out.append("  The same account can show up in more than one check. The totals at the top count it once.")
     if report.has_costs:
         out.append("  The $ is what the flagged requests cost, not a confirmed loss: check before you act.")

@@ -9,6 +9,9 @@
     emails = ["*@yourcompany.com"]
     keys = ["key_ci_*"]
 
+    [farms]
+    window_days = 30   # how close together accounts have to show up on a device (0: no limit)
+
 Trusted networks and devices still get analyzed, they just never link accounts
 into a farm. Ignored accounts, emails and keys are left out of the checks
 completely (they still count towards your total spend).
@@ -24,12 +27,15 @@ from dataclasses import dataclass, field
 from fnmatch import fnmatchcase
 from pathlib import Path
 
+from luxvigil.checks.farms import DEFAULT_WINDOW_DAYS
+
 DEFAULT_PATH = "luxvigil.toml"
 
 # section -> the keys it can have
 ALLOWED = {
     "trusted": {"networks", "devices"},
     "ignore": {"accounts", "emails", "keys"},
+    "farms": {"window_days"},
 }
 
 
@@ -46,6 +52,7 @@ class Config:
     ignore_accounts: list = field(default_factory=list)
     ignore_emails: list = field(default_factory=list)
     ignore_keys: list = field(default_factory=list)
+    farm_window_days: int = DEFAULT_WINDOW_DAYS  # see checks/farms.py
     path: str = ""
     # the same IPs come up on thousands of rows, so check each one once
     _ip_cache: dict = field(default_factory=dict, repr=False, compare=False)
@@ -85,6 +92,15 @@ def _strings(section, key, value):
     return value
 
 
+def _window(path, value):
+    """[farms] window_days: a whole number of days, 0 for no time limit."""
+    # bool is an int in Python, so `window_days = true` would quietly mean 1
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 3650:
+        raise ConfigError(f"{path}: [farms] window_days should be a whole number of days from 0 to 3650 "
+                          f"(0 means no time limit), got {value!r}")
+    return value
+
+
 def load_config(path=None):
     """Read the config. No path and no luxvigil.toml around means an empty config."""
     if path is None:
@@ -101,7 +117,7 @@ def load_config(path=None):
     # 1. only the sections and keys we know about
     for section, values in data.items():
         if section not in ALLOWED:
-            raise ConfigError(f"{path}: unknown section [{section}] (use [trusted] or [ignore])")
+            raise ConfigError(f"{path}: unknown section [{section}] (use [trusted], [ignore] or [farms])")
         if not isinstance(values, dict):
             # e.g. `trusted = "1.2.3.4"` at the top instead of a [trusted] section
             raise ConfigError(f"{path}: {section} should be a [{section}] section")
@@ -127,5 +143,6 @@ def load_config(path=None):
         ignore_accounts=_strings("ignore", "accounts", ignore.get("accounts", [])),
         ignore_emails=_strings("ignore", "emails", ignore.get("emails", [])),
         ignore_keys=_strings("ignore", "keys", ignore.get("keys", [])),
+        farm_window_days=_window(path, data.get("farms", {}).get("window_days", DEFAULT_WINDOW_DAYS)),
         path=str(path),
     )

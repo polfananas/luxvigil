@@ -120,7 +120,8 @@ def test_no_costs_at_all_still_runs_the_checks_without_dollars(tmp_path, capsys)
     assert report.skipped["spend spikes"] == "no costs in the logs"
     text = "\n".join(render_text(report))
     assert "$" not in text
-    assert "no dollar amounts" in text and "5 accounts with strong signals" in text
+    # 5 accounts on one device, nothing else off about them: worth a look, not strong signals
+    assert "no dollar amounts" in text and "0 accounts with strong signals, 5 accounts worth a look" in text
 
     assert main(["scan", str(path), "--json"]) == 0
     data = json.loads(capsys.readouterr().out)
@@ -182,12 +183,20 @@ def test_only_the_repeated_prompts_of_a_bot_are_likely_abuse():
     assert finding["evidence"]["other_cost_usd"] == 30.0
 
 
-def test_a_farm_is_the_spend_of_its_linked_accounts():
-    rows = [req(f"f{i}", day=d, cost=1.0, device="shared") for i in range(5) for d in range(3)]
+def test_a_farm_is_the_spend_on_the_shared_device_and_a_group_all_its_spend():
+    # throwaway emails: a likely farm, its cost is the requests on the shared device
+    rows = [req(f"f{i}", day=d, cost=1.0, device="shared", email=f"f{i}@mailinator.com")
+            for i in range(5) for d in range(3)]
+    rows += [req("f0", day=4, cost=50.0, device="own-laptop", email="f0@mailinator.com")]
     report = build_report(rows)
     (finding,) = [f for f in to_dict(report)["findings"] if f["check"] == "account_farm"]
-    assert finding["cost_basis"] == "all_requests_of_linked_accounts"
+    assert finding["severity"] == "likely" and finding["cost_basis"] == "requests_on_shared_devices_or_networks"
+    assert finding["cost_usd"] == 15.0 and finding["evidence"]["all_cost_usd"] == 65.0
     assert "not a confirmed loss" in "\n".join(render_text(report))
+    # the same, with normal emails: worth a look, and then it's all of what they spent
+    rows = [req(f"f{i}", day=d, cost=1.0, device="shared") for i in range(5) for d in range(3)]
+    (finding,) = [f for f in to_dict(build_report(rows))["findings"] if f["check"] == "account_farm"]
+    assert finding["severity"] == "review" and finding["cost_basis"] == "all_requests_of_these_accounts"
 
 
 # how much of the logs each check could actually look at

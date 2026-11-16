@@ -9,13 +9,21 @@ domains and prompt hashes, which are already in your logs. (If your account
 ids are emails, they're still account ids to us, so they do show up.)
 
 Every finding says what its cost_usd covers (cost_basis), because it's not
-the same thing everywhere: a farm is linked accounts, so it's all they spent;
+the same thing everywhere: a likely farm is the requests its accounts made on
+the shared devices and networks, a group worth a look is all its accounts spent,
 a leaked key is only the requests from abroad. None of it is a confirmed loss.
 When the logs have no costs at all, every dollar amount is null, not 0.
 
 Format 2 (luxvigil 0.2.0) changed from 1: dollar amounts can be null, Gmail
 inboxes are "review", a bot's cost_usd is only its repeated prompts, and
 there's coverage, settings and cost_basis.
+
+Format 3 (luxvigil 0.3.0): account farms say how the accounts are related
+("relation": direct or chained), whether they showed up in a burst
+("concentrated", "arrived_from/to", "window_days") and how many accounts have
+something else off ("corroborated_accounts"). Only all three make a "likely"
+farm, and its cost is the requests on the shared devices and networks. Spend
+spikes are always "review". New: some_costs_missing, linked_accounts.
 """
 
 import hashlib
@@ -23,7 +31,7 @@ import hashlib
 from luxvigil import __version__
 
 # Bump this if the shape of the json changes, so scripts reading it can tell.
-FORMAT_VERSION = 2
+FORMAT_VERSION = 3
 
 # For every check: the most likely innocent reason it fired. Every finding
 # carries one, so nobody bans a customer without thinking twice.
@@ -56,7 +64,7 @@ def _id(check, *parts):
 
 # what each finding's cost_usd is the cost of
 BASIS = {
-    "account_farm": "all_requests_of_linked_accounts",
+    "account_farm": "requests_on_shared_devices_or_networks",  # likely farms, see the farm block
     "disposable_emails": "all_requests_of_these_accounts",
     "shared_key": "requests_from_outside_home_country",
     "copy_paste_bot": "requests_with_the_repeated_prompts",
@@ -75,7 +83,7 @@ def _date(t):
     return t.isoformat() if t else None
 
 
-def _finding(check, severity, summary, accounts, requests, cost, evidence, *id_parts, known=True):
+def _finding(check, severity, summary, accounts, requests, cost, evidence, *id_parts, known=True, basis=None):
     """Every finding has the same shape, whatever check it comes from."""
     return {
         "id": _id(check, *id_parts),
@@ -85,7 +93,7 @@ def _finding(check, severity, summary, accounts, requests, cost, evidence, *id_p
         "accounts": sorted(accounts),
         "requests": requests,
         "cost_usd": _money(cost, known),
-        "cost_basis": BASIS[check],  # what cost_usd and requests cover
+        "cost_basis": basis or BASIS[check],  # what cost_usd and requests cover
         "evidence": evidence,  # check-specific details, see each block below
         "innocent_explanation": INNOCENT[check],
         "next_step": NEXT[check],
@@ -99,21 +107,34 @@ def to_dict(report, notes=()):
 
     # strong signals first: these count towards "likely abuse"
     for f in report.farms:
-        # direct: one device or network with min_farm accounts on it. Chained: only small
-        # shares linking up in a chain, which innocent setups do too (see farms.py)
+        # likely only when related directly, in a burst, and at least half the accounts have
+        # something else off. Its cost is then the requests on the shared devices and networks
         findings.append(_finding(
-            "account_farm", "review" if f.chained else "likely", f.why, f.accounts, f.requests, f.cost_usd,
+            "account_farm", "likely" if f.likely else "review", f.why, f.accounts,
+            f.signal_requests if f.likely else f.requests, f.signal_cost_usd if f.likely else f.cost_usd,
             {
                 "shared_devices": f.devices,
                 "shared_networks": f.networks,
-                "chained": f.chained,
+                "relation": "chained" if f.chained else "direct",
                 "largest_share": f.largest_share,  # most accounts on any one device or network
-                # linked to the farm only through smaller shares, not in accounts or cost
+                "concentrated": f.concentrated,  # min_farm first seen on one of them within window_days
+                "window_days": report.settings.get("farm_window_days"),
+                # first and last time an account was first seen on the shared devices and networks,
+                # in these logs: not when the accounts were created
+                "arrived_from": _date(f.arrived_from),
+                "arrived_to": _date(f.arrived_to),
+                "earlier_use_unknown": f.earlier_use_unknown,  # the logs start right before
+                "corroborated_accounts": f.corroborated,  # throwaway email or bot prompts too
+                # related, but not in accounts or cost: linked through smaller shares, or showed up
+                # on the device outside the burst
                 "linked_accounts": f.linked,
-                "first_seen": _date(f.first_seen),  # when the farm was active
+                "all_requests": f.requests,  # everything the accounts did, on the shared stuff or not
+                "all_cost_usd": _money(f.cost_usd, known),
+                "first_seen": _date(f.first_seen),  # when the accounts were active
                 "last_seen": _date(f.last_seen),
             },
             *sorted(f.accounts), known=known,
+            basis=None if f.likely else "all_requests_of_these_accounts",
         ))
     for b in report.bots:
         findings.append(_finding(

@@ -47,6 +47,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+from luxvigil.config import Config
 from luxvigil.report import build_report
 from luxvigil.schema import COLUMNS, load_logs
 
@@ -134,6 +135,9 @@ def main():
     parser.add_argument("--min-farm", type=int, default=5, help="same as luxvigil scan --min-farm (default 5)")
     parser.add_argument("--split", choices=["all", "amazon"], default="all",
                         help="score every account, or only Amazon's test set (last 20%% in time)")
+    parser.add_argument("--window", type=int, default=30,
+                        help="[farms] window_days: how close together accounts have to show up on a device "
+                             "(default 30, 0 = no time limit like luxvigil before 0.3.0)")
     parser.add_argument("--causal", action="store_true",
                         help="score each account only with the purchases up to its own, no peeking ahead")
     args = parser.parse_args()
@@ -148,10 +152,12 @@ def main():
     labels, in_order, bought_at = convert(src, logs, countries)
 
     # 2. run the same scan you'd get with `luxvigil scan`, on all the logs (like you would on yours),
-    #    and take every account in a farm
+    #    and take every account that showed up in a burst on a shared device. This data has no
+    #    emails or prompts, so nothing can back a burst up: in the report they're all "worth a
+    #    look", never likely abuse. What's measured here is the burst itself
     rows = load_logs(logs)
-    report = build_report(rows, min_farm=args.min_farm)
-    flagged = {acc for farm in report.farms for acc in farm.accounts}
+    report = build_report(rows, min_farm=args.min_farm, config=Config(farm_window_days=args.window))
+    flagged = {acc for farm in report.farms if farm.concentrated and not farm.chained for acc in farm.accounts}
 
     # 3. which accounts we grade: all of them, or Amazon's test set (the last 20% by purchase time)
     graded = in_order[int(len(in_order) * 0.8):] if args.split == "amazon" else in_order
