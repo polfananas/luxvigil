@@ -8,6 +8,7 @@ Exit codes: 0 when the scan ran (whatever it found), 1 when it couldn't
 """
 
 import argparse
+import csv
 import json
 import math
 import sys
@@ -19,7 +20,7 @@ from luxvigil.config import Config, ConfigError, load_config
 from luxvigil.export import to_dict
 from luxvigil.generate import generate, write_csv
 from luxvigil.report import build_report, render_text
-from luxvigil.schema import FORMATS, LogFormatError, load_logs
+from luxvigil.schema import FORMATS, LogFormatError, load_logs, shown
 
 
 def parse_map(items):
@@ -66,6 +67,12 @@ def run_demo(seed=42, keep=None):
         print(f"   fake logs saved to {keep}")
     print("   now try it on yours: luxvigil scan your-logs.csv")
     return 0
+
+
+def _say(text):
+    """Messages go to stderr. They can carry bits of your logs (a bad value, a file
+    name), so no raw control characters get through to the terminal."""
+    print("\n".join(shown(line, limit=1000) for line in str(text).split("\n")), file=sys.stderr)
 
 
 def _utf8_output():
@@ -123,13 +130,13 @@ def main(argv=None):
     if args.command == "scan":
         problem = _bad_args(args)
         if problem:
-            print(f"luxvigil: {problem}", file=sys.stderr)
+            _say(f"luxvigil: {problem}")
             return 1
         # config first: it's tiny, and a typo in it shouldn't make you wait for a big file to load first
         try:
             config = load_config(args.config)
         except (OSError, ConfigError) as e:
-            print(f"luxvigil: bad config: {e}", file=sys.stderr)
+            _say(f"luxvigil: bad config: {e}")
             return 1
         try:
             mapping = parse_map(args.map)
@@ -137,11 +144,16 @@ def main(argv=None):
             rows = load_logs(args.logs, mapping=mapping, price_in=args.price_in, price_out=args.price_out,
                              notes=notes, skip_bad=args.skip_bad_rows, fmt=args.format)
         except (OSError, LogFormatError) as e:
-            print(f"luxvigil: can't read {args.logs}: {e}", file=sys.stderr)
+            _say(f"luxvigil: can't read {args.logs}: {e}")
+            return 1
+        except (csv.Error, UnicodeDecodeError, json.JSONDecodeError) as e:
+            # a broken export, a binary file, a single field of megabytes...: say so, no traceback
+            kind = "LiteLLM export" if args.format == "litellm" else "UTF-8 CSV"
+            _say(f"luxvigil: can't read {args.logs}, it doesn't look like a valid {kind}: {e}")
             return 1
         # notes go to stderr so --json output stays clean to pipe into jq
         for note in notes:
-            print(f"   note: {note}", file=sys.stderr)
+            _say(f"   note: {note}")
         report = build_report(rows, min_farm=args.min_farm, min_countries=args.min_countries, config=config)
         if args.json:
             print(json.dumps(to_dict(report, notes), indent=2, ensure_ascii=False))

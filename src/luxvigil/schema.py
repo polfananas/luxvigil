@@ -86,6 +86,13 @@ class LogFormatError(ValueError):
 _EARLIEST, _LATEST = 946_684_800, 4_102_444_800  # 2000-01-01 and 2100-01-01
 
 
+def shown(value, limit=40):
+    """A value from the logs, safe to put in a message: control characters escaped (an
+    ESC in a cell can't move the cursor or retitle the terminal) and long values cut."""
+    text = "".join(c if c.isprintable() else repr(c)[1:-1] for c in str(value))
+    return text if len(text) <= limit else text[:limit] + "…"
+
+
 def _parse_time(value):
     """ISO 8601 or a unix timestamp (seconds or milliseconds), always returned in UTC.
 
@@ -101,7 +108,7 @@ def _parse_time(value):
     if number > 1e11:  # milliseconds
         number /= 1000
     if not _EARLIEST <= number <= _LATEST:  # also catches nan
-        raise ValueError(f"timestamp '{value}' doesn't look like a date (use ISO 8601 or unix seconds)")
+        raise ValueError(f"timestamp '{shown(value)}' doesn't look like a date (use ISO 8601 or unix seconds)")
     return datetime.fromtimestamp(number, tz=timezone.utc)
 
 
@@ -120,9 +127,9 @@ def _tokens(value, name):
     try:
         n = float(value)
     except (TypeError, ValueError):
-        raise ValueError(f"{name} should be a number, got '{value}'") from None
+        raise ValueError(f"{name} should be a number, got '{shown(value)}'") from None
     if not math.isfinite(n) or n < 0 or n != int(n):
-        raise ValueError(f"{name} should be a whole number, 0 or more, got '{value}'")
+        raise ValueError(f"{name} should be a whole number, 0 or more, got '{shown(value)}'")
     return int(n)
 
 
@@ -131,9 +138,9 @@ def _money(value, name):
     try:
         x = float(value)
     except (TypeError, ValueError):
-        raise ValueError(f"{name} should be a number, got '{value}'") from None
+        raise ValueError(f"{name} should be a number, got '{shown(value)}'") from None
     if not math.isfinite(x) or x < 0:
-        raise ValueError(f"{name} should be 0 or more, got '{value}'")
+        raise ValueError(f"{name} should be 0 or more, got '{shown(value)}'")
     return x
 
 

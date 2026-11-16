@@ -342,14 +342,16 @@ def _render(report):
         period = f" · {start}" if start == end else f" · {start} to {end} (UTC)"
     out.append(f"🕯️ luxvigil{period}")
     out.append("")
-    if not report.has_costs:
+    if not report.requests:
+        spent = "nothing to scan"
+    elif not report.has_costs:
         spent = "no costs in the logs"
     elif report.all_costs_known:
         spent = f"${report.total_cost:,.2f} spent"
     else:
         spent = (f"${report.total_cost:,.2f} spent on the {report.known_cost_requests:,} requests with a cost, "
                  f"{report.requests - report.known_cost_requests:,} unknown")
-    out.append(f"  {report.requests:,} requests · {report.accounts:,} accounts · {spent}")
+    out.append(f"  {_plural(report.requests, 'request')} · {_plural(report.accounts, 'account')} · {spent}")
     if report.config_path:
         skipped = f", skipping {_plural(report.ignored_accounts, 'account')}" if report.ignored_accounts else ""
         out.append(f"  ⚙️  using {report.config_path}{skipped}")
