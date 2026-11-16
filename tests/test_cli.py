@@ -58,3 +58,18 @@ def test_an_empty_file_says_so(tmp_path, capsys):
     path.write_text("timestamp,account_id,input_tokens,output_tokens,cost_usd\n")
     assert main(["scan", str(path)]) == 0
     assert "0 requests · 0 accounts · nothing to scan" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("args", [[], ["--skip-bad-rows"]])
+def test_control_characters_in_a_bad_value_dont_reach_the_terminal(tmp_path, capsys, args):
+    # an ESC/BEL in a cell could retitle the terminal or fake a message, ‮ flips text direction
+    bad = "bad\x1b]2;PWN\x07\x1b[31mRED‮"
+    path = tmp_path / "logs.csv"
+    path.write_text("timestamp,account_id,input_tokens,output_tokens,cost_usd\n"
+                    "2026-01-01T00:00:00Z,a,1,1,1\n"
+                    f"2026-01-01T00:00:00Z,a,1,1,{bad}\n", encoding="utf-8")
+    main(["scan", str(path), *args])
+    err = capsys.readouterr().err
+    assert "cost_usd should be a number" in err
+    assert not any(c in err for c in "\x1b\x07‮")
+    assert "\\x1b" in err  # shown escaped, so you can still see something odd was there

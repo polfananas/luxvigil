@@ -16,6 +16,8 @@
   `"severity": "review"`
 - a file it can't parse (binary, cut-off JSON, a single field over 128 KB) gets a one-line error
   instead of a Python traceback. An empty log says "nothing to scan" instead of "no costs"
+- errors and notes escape control characters from your logs (an ESC or BEL in a bad cell could
+  retitle or recolor the terminal) and cut long values short
 
 ## 0.2.0
 
