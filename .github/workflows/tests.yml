@@ -27,3 +27,12 @@ jobs:
       - run: pytest -q
       # make sure the scan command actually runs end to end, not just the tests
       - run: luxvigil demo
+
+  # one check that's green only when all 15 above are, so a branch rule can
+  # require just this one. always() matters: a skipped check counts as passed
+  all-tests:
+    if: always()
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "${{ needs.test.result }}" = success
