@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
+
+Fewer false alarms before telling anyone about it: missing costs, chains of shared devices and devices shared over months no longer look like abuse, plus fixes for bot costs, row order and duplicate rows.
 
 - spend spikes: a day with requests that have no cost no longer counts as a $0 day. It never sets
   the usual spend, so three days with missing costs and then a normal day isn't a "spike" anymore.
@@ -38,6 +40,7 @@
   `arrived_from`/`arrived_to` (first seen on the shared devices, in these logs), `earlier_use_unknown`,
   `corroborated_accounts`, `all_requests`/`all_cost_usd`, and `cost_basis` depends on the severity.
   `settings.farm_window_days`
+- CI: actions pinned to commits, one `all-tests` check, and MAINTAINING.md with the release and recovery steps
 
 ## 0.2.0
 
