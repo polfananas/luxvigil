@@ -5,8 +5,8 @@ Notes for whoever has the keys: how a release goes out, and what to do when some
 ## Releasing
 
 1. Bump `__version__` in `src/luxvigil/__init__.py` and move the "Unreleased" notes in `CHANGELOG.md` under the new version, in a PR like any other change.
-2. Once it's on `main`, draft a GitHub release with a tag that matches the version (`v0.3.0` for `0.3.0`) and publish it.
-3. The `release` workflow checks the tag matches the code, runs the tests, builds and uploads to PyPI. There's no PyPI token anywhere: PyPI trusts this repo's workflow directly ("trusted publishing"), so there's nothing to leak.
+2. Once it's on `main`, draft a GitHub release with a tag that matches the version (`v0.3.0` for `0.3.0`), pointing at the latest commit on `main`, and publish it.
+3. The `release` workflow checks the tag matches the code, builds and uploads to PyPI. It doesn't run the tests itself, and it doesn't check the tag is on `main`: that's why step 2 tags `main`, where every commit got there through a PR with the tests green. There's no PyPI token anywhere: PyPI trusts this repo's workflow directly ("trusted publishing"), so there's nothing to leak.
 4. Check it landed: `pipx run --spec luxvigil==0.3.0 luxvigil demo` from a clean shell.
 
 ## When something goes wrong
