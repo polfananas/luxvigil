@@ -33,3 +33,7 @@ The "What's next" list in the README is where things are going. Real-world cases
 ## Security issues
 
 Please don't open a public issue, see [SECURITY.md](SECURITY.md).
+
+## Maintainers
+
+How releases go out and what to do when something breaks: [MAINTAINING.md](MAINTAINING.md).
