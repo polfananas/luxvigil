@@ -12,7 +12,7 @@ luxvigil reads the request logs of your AI API (or any app that gives away token
 
 ![luxvigil demo](https://raw.githubusercontent.com/polfananas/luxvigil/main/docs/demo.gif)
 
-> Early days (v0.2). Everything below works, and I'd love to hear what it finds in your logs, or what it gets wrong: [open an issue](https://github.com/polfananas/luxvigil/issues).
+> Early days (v0.3). Everything below works, and I'd love to hear what it finds in your logs, or what it gets wrong: [open an issue](https://github.com/polfananas/luxvigil/issues).
 
 ## Try it
 
