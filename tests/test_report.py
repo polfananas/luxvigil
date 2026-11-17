@@ -35,15 +35,19 @@ def test_total_matches_what_was_planted(sample):
     victim = next(r for r in rows if r["api_key_id"] == leak)
     owner_device = victim["device_id"]  # the owner's first request comes before the leak
 
-    likely = sum(r["cost_usd"] for r in rows if r["account_id"] in farm)
+    # the big farm has throwaway emails and template prompts: likely abuse. The device farm
+    # shows up in a burst too, but nothing else is off about it, so it's only worth a look
+    likely = sum(r["cost_usd"] for r in rows if r["account_id"] in planted["farm_big"])
     # leaked requests come from random devices, the owner always uses the same one
     likely += sum(r["cost_usd"] for r in rows if r["api_key_id"] == leak and r["device_id"] != owner_device)
+    device_farm = sum(r["cost_usd"] for r in rows if r["account_id"] in planted["farm_device"])
     # spike requests are way bigger than anything a normal user sends (> $0.035 each)
     spike = sum(r["cost_usd"] for r in rows if r["account_id"] == spiker and r["cost_usd"] > 0.035)
 
     assert report.abuse_cost == pytest.approx(likely, rel=0.02)
     # a spike on its own could be a launch, so it's only worth a look
-    assert report.review_cost == pytest.approx(spike, rel=0.02)
+    assert report.review_cost == pytest.approx(device_farm + spike, rel=0.02)
+    assert farm == {a for f in report.farms for a in f.accounts}  # both farms still show up
 
 
 def test_total_is_not_the_sum_of_the_checks(sample):
@@ -63,8 +67,8 @@ def test_flagged_accounts(sample):
     rows, planted, report = sample
     leak = planted["shared_key"][0]
     victim = next(r["account_id"] for r in rows if r["api_key_id"] == leak)
-    assert report.flagged_accounts == set(planted["farm_big"]) | set(planted["farm_device"]) | {victim}
-    assert report.review_accounts == set(planted["spike"])
+    assert report.flagged_accounts == set(planted["farm_big"]) | {victim}
+    assert report.review_accounts == set(planted["farm_device"]) | set(planted["spike"])
 
 
 def test_clean_logs():

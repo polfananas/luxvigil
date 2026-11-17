@@ -25,7 +25,9 @@ Two ways to score it, and they answer different questions:
 
 ### All accounts
 
-151,112 accounts, 14,151 of them fraud (9.4%). Retrospective:
+151,112 accounts, 14,151 of them fraud (9.4%). Retrospective, and with no time
+limit on when the accounts showed up (`--window 0`, how luxvigil worked before
+0.3.0, see the next sections for what the time window changes):
 
 | --min-farm | accounts flagged | precision | recall | legit accounts flagged |
 |---|---|---|---|---|
@@ -70,13 +72,39 @@ So what this shows is that the farm check catches a farm attack when one
 happens. It doesn't catch fraud in general, and the 90.9% is really "90.9% in a
 month with a farm attack".
 
+### How close together the accounts have to show up (0.3.0)
+
+Since 0.3.0 a shared device only counts as a burst when 5 accounts were first
+seen on it within `window_days` (30 by default, `[farms] window_days` in
+luxvigil.toml). Same retrospective scan, all accounts, `--min-farm 5`, counting
+every account in a burst (`python benchmarks/fraud_ecommerce.py --window N`):
+
+| --window | accounts flagged | precision | recall | legit accounts flagged | flagged outside January |
+|---|---|---|---|---|---|
+| 0 (no limit, before 0.3.0) | 8,391 | 90.9% | 53.9% | 766 | 646 (4.5% fraud) |
+| 90 days | 8,148 | 93.1% | 53.6% | 560 | 426 (3.5% fraud) |
+| 30 days (default) | 7,734 | 97.7% | 53.4% | 181 | 32 (none fraud) |
+| 7 days | 7,583 | 99.4% | 53.3% | 45 | 0 |
+
+On this data the window does what it's for: most of the legit accounts that
+shared a device over the year drop out, and the farms stay, because they're
+bursts of accounts made seconds apart. A shorter window looks even better here,
+but that's this dataset: every farm in it is instant, so it can't show what a
+short window costs, which is missing a farm that signs up over a few weeks.
+30 days is still a guess for AI APIs, not a number this table calibrates.
+
+Also: this data has no emails or prompts, so nothing backs a burst up, and in a
+real `luxvigil scan` all of these are "worth a look", not likely abuse (see
+checks/farms.py). The table measures the burst itself.
+
 ### Next to Amazon's numbers
 
 Amazon's benchmark tests on the last 20% of purchases in time (late August to
 December 2015) and reports AUC. `--split amazon` grades exactly those rows.
 For the AUC we use "how many accounts share this device" as the score, the
 signal the farm check is built on. That's one score, not the whole scan: at
-the default threshold the scan flags 9 accounts there (precision 33%, recall 0.2%).
+the default threshold the scan flags no accounts there with the 30-day window
+(9 without it, precision 33%, recall 0.2%).
 
 Same rows is not the same protocol. Their models train on the first 80% and
 then score the test set. Their preprocessing passes the device id as the
@@ -266,8 +294,10 @@ Share of the (estimated) spend flagged as likely abuse, as the bot check changed
 The last column is a change in what gets counted, not in what gets found:
 up to the length rule, everything a bot's accounts sent was likely abuse. From
 0.2.0 only the requests with the repeated prompts are, and the rest of what
-those accounts did is "worth a look". On WildChat-1M that's $699 of likely
-abuse plus $2,362 worth a look, from the same 14 groups. We didn't keep the
+those accounts did is "worth a look". On WildChat-1M that's $675 of likely
+abuse plus $2,386 worth a look, from the same 14 groups ($699 and $2,362 in
+0.2.0, which also counted a request as repeated when another account in the
+group was the one repeating it). We didn't keep the
 4.8M data around to re-run that column.
 
 On WildChat-1M, 14 bot groups (298 accounts) are left, and nearly all of them

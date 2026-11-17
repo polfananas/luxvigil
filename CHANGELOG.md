@@ -12,8 +12,7 @@
   Accounts only linked in a chain of smaller shares (a family computer, a support agent logging in on
   customers' laptops) are reported as a chain, worth a look, not as likely abuse. Accounts that hang
   off a farm only through smaller shares are listed with it (`evidence.linked_accounts`) but not
-  counted in it. New `evidence.chained` and `evidence.largest_share`; chained farms have
-  `"severity": "review"`
+  counted in it. New `evidence.largest_share`
 - a file it can't parse (binary, cut-off JSON, a single field over 128 KB) gets a one-line error
   instead of a Python traceback. An empty log says "nothing to scan" instead of "no costs"
 - errors and notes escape control characters from your logs (an ESC or BEL in a bad cell could
@@ -27,6 +26,18 @@
   export can't create a bot or double the cost. `--keep-duplicates` keeps them. LiteLLM's request_id
   tells apart two requests that look identical
 - a CSV row with more values than the header is a bad row (it crashed before)
+- account farms look at time: a device or network is a burst when 5 accounts (`--min-farm`) were
+  first seen on it within 30 days (`[farms] window_days` in luxvigil.toml, 0 = no limit). A farm is
+  likely abuse only when it's direct, a burst, and at least half its accounts also have a throwaway
+  email or send a bot's prompts. Its cost is then the requests on the shared devices and networks;
+  everything else the accounts did is worth a look. A burst with nothing else off (a class, a kiosk),
+  a device shared over months, or a chain are reported as "accounts sharing devices or networks",
+  worth a look, with all of what they spent. On Amazon's fraud data the 30-day window takes wrongly
+  flagged legit accounts from 766 to 181 at the same recall, see benchmarks/
+- JSON format 3: account farms have `relation` (direct/chained), `concentrated`, `window_days`,
+  `arrived_from`/`arrived_to` (first seen on the shared devices, in these logs), `earlier_use_unknown`,
+  `corroborated_accounts`, `all_requests`/`all_cost_usd`, and `cost_basis` depends on the severity.
+  `settings.farm_window_days`
 
 ## 0.2.0
 

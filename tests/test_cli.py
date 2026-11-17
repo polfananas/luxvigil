@@ -18,7 +18,7 @@ def test_demo(capsys):
     assert main(["demo"]) == 0
     out = capsys.readouterr().out
     assert "is likely abuse" in out
-    assert "2 account farms" in out
+    assert "1 account farm" in out and "1 group of accounts sharing devices" in out
     assert "try it on yours" in out
 
 
