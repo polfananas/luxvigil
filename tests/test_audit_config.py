@@ -66,7 +66,7 @@ def test_default_master_key_everywhere_is_one_finding(tmp_path):
     })
     found = audit([tmp_path]).findings
     assert [f.check for f in found] == ["default-master-key"]
-    assert found[0].where.count(":") == 3  # .env, compose and config.yaml
+    assert len(found[0].where.split(", ")) == 3  # .env, compose and config.yaml (Windows paths have a : too)
 
 
 def test_default_key_through_os_environ(tmp_path):
