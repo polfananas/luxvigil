@@ -1,4 +1,4 @@
-"""The luxvigil command: scan, demo and generate.
+"""The luxvigil command: scan, demo, generate and audit-config.
 
 Everything here is plumbing: read the arguments, load the logs and the config,
 build the report and print it. The actual checks live in checks/ and report.py.
@@ -16,6 +16,7 @@ import tempfile
 from pathlib import Path
 
 from luxvigil import __version__
+from luxvigil import audit_config
 from luxvigil.config import Config, ConfigError, load_config
 from luxvigil.export import to_dict
 from luxvigil.generate import generate, write_csv
@@ -127,6 +128,13 @@ def main(argv=None):
     gen.add_argument("--days", type=int, default=30, help="days of traffic")
     gen.add_argument("--seed", type=int, default=42, help="random seed, same seed = same file")
 
+    audit = sub.add_parser("audit-config",
+                           help="check a LiteLLM setup's files for settings that get its keys stolen")
+    audit.add_argument("paths", nargs="*", default=["."], metavar="PATH",
+                       help="folders or files: config.yaml, .env, docker-compose.yml, requirements.txt "
+                            "(default: this folder)")
+    audit.add_argument("--json", action="store_true", help="print the findings as JSON instead")
+
     args = parser.parse_args(argv)
 
     if args.command == "scan":
@@ -162,6 +170,18 @@ def main(argv=None):
             print(json.dumps(to_dict(report, notes), indent=2, ensure_ascii=False))
         else:
             print("\n".join(render_text(report)))
+        return 0
+
+    if args.command == "audit-config":
+        try:
+            result = audit_config.audit(args.paths)
+        except (OSError, audit_config.AuditError) as e:
+            _say(f"luxvigil: {e}")
+            return 1
+        if args.json:
+            print(json.dumps(audit_config.to_dict(result), indent=2, ensure_ascii=False))
+        else:
+            print("\n".join(shown(line, limit=1000) for line in audit_config.render_text(result)))
         return 0
 
     if args.command == "demo":
