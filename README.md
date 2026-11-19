@@ -167,6 +167,33 @@ LiteLLM doesn't log emails or countries, so those checks are skipped, and prompt
 if you turned on storing them in spend logs. When they are, luxvigil hashes them on your machine
 and drops the text.
 
+### Checking a LiteLLM setup
+
+The logs tell you after the fact. Before that, check the files your proxy runs from:
+
+```
+$ luxvigil audit-config path/to/your/litellm
+```
+
+It reads `config.yaml`, `.env`, `docker-compose.yml` (and any `env_file` it points to) and
+`requirements.txt`, and tells you what to fix now:
+
+- the master key is `sk-1234`, the example from LiteLLM's docs. In February, 294 of 3,074
+  LiteLLM gateways open to the internet accepted it
+- `dangerously_permit_weak_or_unset_master_key` is on, so the proxy starts without a real key
+- provider keys or the master key written straight into `config.yaml` instead of `os.environ/...`
+- LiteLLM older than 1.84.0, which fixes the flaws published this year (one of them on CISA's
+  list of vulnerabilities exploited in the wild)
+- an Admin UI password from the docs' examples (`admin`, `langchain`...)
+
+And what's worth a look: an image that isn't pinned to a version, and no `UI_PASSWORD`, which makes
+the master key the Admin UI password too.
+
+It only reads files. Nothing is sent anywhere and nothing on your network is touched. Keys it finds
+are shown cut short (`sk-p… (40 characters)`), never whole. Settings you make somewhere else (a
+secret manager, Kubernetes, your shell) aren't in these files, so it can't see them. `--json` prints
+the findings as data.
+
 ### JSON
 
 Want to feed it into something else? `--json` prints the same report as data. Every finding has a stable id (same logs, same ids), how strong it is, what its cost covers, the evidence behind it, what could explain it innocently and what to check next:
@@ -236,6 +263,7 @@ About half of that is just reading the CSV. On real logs (WildChat, 2M requests)
 - [x] six checks, terminal report, JSON, config
 - [x] tested on real data (WildChat, Amazon's fraud benchmark)
 - [x] reads LiteLLM spend logs
+- [x] checks a LiteLLM setup's files for the settings that get keys stolen
 - [ ] LLMjacking: stolen cloud keys running models on your AWS bill (reading CloudTrail / Bedrock logs)
 - [ ] spotting traffic that's too fast to be human
 - [ ] more formats: Helicone, OpenAI usage exports

@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- `luxvigil audit-config`: reads a LiteLLM setup's `config.yaml`, `.env`, `docker-compose.yml`
+  and `requirements.txt` and points out the settings that get its keys stolen: the `sk-1234`
+  example master key, `dangerously_permit_weak_or_unset_master_key`, keys written into
+  `config.yaml`, LiteLLM older than 1.84.0, Admin UI passwords from the docs, unpinned images and
+  no `UI_PASSWORD`. Files only, no network, keys shown cut short. `--json` for the findings as data
+
 ## 0.3.0
 
 Fewer false alarms before telling anyone about it: missing costs, chains of shared devices and devices shared over months no longer look like abuse, plus fixes for bot costs, row order and duplicate rows.
