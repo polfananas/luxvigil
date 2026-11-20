@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
+
+Before the logs, the setup: a new `audit-config` command checks a LiteLLM deployment's files for the settings that get its keys stolen.
 
 - `luxvigil audit-config`: reads a LiteLLM setup's `config.yaml`, `.env`, `docker-compose.yml`
   and `requirements.txt` and points out the settings that get its keys stolen: the `sk-1234`
