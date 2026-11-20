@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- `audit-config` checks more of the setup: an `.env` with keys committed to git, the proxy's port
+  published on every network interface, the example database password from LiteLLM's
+  `docker-compose.yml` (fix now when the database port is published too), and a database without
+  `LITELLM_SALT_KEY`
+- README: requests LiteLLM doesn't write to its spend logs are invisible to luxvigil too
+- MAINTAINING.md: what the release workflow checks, and why the tag goes on `main`
+
 ## 0.4.0
 
 Before the logs, the setup: a new `audit-config` command checks a LiteLLM deployment's files for the settings that get its keys stolen.

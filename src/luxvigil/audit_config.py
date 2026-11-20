@@ -15,10 +15,16 @@ What it checks, all from LiteLLM's own docs and code:
   - keys written straight into config.yaml instead of os.environ/...
   - a LiteLLM image or package older than 1.84.0
   - an Admin UI password from the docs' examples (admin, langchain...)
+  - an .env with keys in it, committed to git
+  - the database password from LiteLLM's docker-compose.yml, with the
+    database port published
 
   worth a look
   - a LiteLLM image that isn't pinned to a version (latest, main-stable...)
   - no UI_PASSWORD, so the master key is also the Admin UI password
+  - the proxy's port published on every network interface
+  - the example database password, or the database port published
+  - a database but no LITELLM_SALT_KEY
 
 YAML is read line by line, without a YAML library (luxvigil has no
 dependencies). That covers config.yaml and docker-compose.yml as people write
@@ -303,6 +309,7 @@ def collect(files):
     configs = []  # (path, [Entry])
     images = []  # (where, image)
     packages = []  # (where, version)
+    services = {}  # compose service -> {"image": ..., "ports": [(where, short form)], "long_ports": [...]}
     extra_env = []  # env_file: paths from compose files, read too
 
     for path, kind, text in files:
@@ -339,8 +346,19 @@ def collect(files):
     for path, kind, text in files:
         if kind == "compose":
             for e in yaml_entries(text):
+                service = None
+                if len(e.path) >= 2 and e.path[0] == "services":
+                    service = services.setdefault(e.path[1], {"image": None, "ports": [], "long_ports": []})
                 if e.key == "image" and e.value:
-                    images.append((_where(path, e.line), interpolate(e.value, env) or e.value))
+                    image = interpolate(e.value, env) or e.value
+                    images.append((_where(path, e.line), image))
+                    if service is not None and len(e.path) == 2:
+                        service["image"] = image
+                elif service is not None and e.path[2:] == ("ports",) and e.value is not None:
+                    if e.key is None:
+                        service["ports"].append((_where(path, e.line), interpolate(e.value, env) or e.value))
+                    else:  # long syntax: target / published / host_ip
+                        service["long_ports"].append((_where(path, e.line), e.key, e.value))
                 elif e.path and e.path[-1] == "environment":
                     if e.key is not None and e.value is not None:
                         name, raw = e.key, e.value
@@ -363,7 +381,7 @@ def collect(files):
                 if m:
                     packages.append((_where(path, no), m.group(1)))
 
-    return env, settings, configs, images, packages
+    return env, settings, configs, images, packages, services
 
 
 def _config_value(raw, env):
@@ -404,7 +422,7 @@ def _image_tag(image):
 
 
 def run_checks(files):
-    env, settings, configs, images, packages = collect(files)
+    env, settings, configs, images, packages, services = collect(files)
     findings = []
 
     # where each master key comes from: the env var, or general_settings.master_key
@@ -496,6 +514,10 @@ def run_checks(files):
                 "upgrade to 1.84.0 or later.",
                 DOCS["security"]))
 
+    findings += _network_checks(services)
+    findings += _database_checks(settings, configs, services, env)
+    findings += _git_checks(files)
+
     # the Admin UI login
     ui_off = any(s.name == "DISABLE_ADMIN_UI" and _truthy(s.value) for s in settings)
     env_login_off = any(e.key == "disable_env_credential_login" and _truthy(_config_value(e.value or "", env)[0])
@@ -526,6 +548,170 @@ def run_checks(files):
 
     order = {FIX_NOW: 0, LOOK: 1}
     findings.sort(key=lambda f: order[f.level])
+    return findings
+
+
+_LOOPBACK = ("127.", "localhost", "[::1]", "::1")
+_DATABASE_IMAGES = ("postgres", "mysql", "mariadb", "redis", "mongo")
+# LiteLLM's docker-compose.yml ships with this one, and the rest are the usual first tries
+DEFAULT_DB_PASSWORDS = {"dbpassword9090", "postgres", "password", "litellm", "admin", "root", "changeme"}
+
+
+def _published_everywhere(port):
+    """True if a compose short-syntax port ("4000:4000", "127.0.0.1:4000:4000", "4000")
+    is reachable on every network interface of the machine, not just this one."""
+    port = port.strip().strip("'\"")
+    if port.startswith("["):  # [::1]:4000:4000
+        host = port[1:port.index("]")] if "]" in port else ""
+        return host in ("", "::")
+    parts = port.split(":")
+    if len(parts) >= 3:
+        return parts[0] in ("", "0.0.0.0")
+    return True  # "4000:4000" and "4000" listen on 0.0.0.0
+
+
+def _exposed_ports(service):
+    """Where a service publishes ports on every interface: [(where, port)]."""
+    out = [(where, port) for where, port in service["ports"] if _published_everywhere(port)]
+    published = [(where, value) for where, key, value in service["long_ports"] if key == "published"]
+    host_ips = [value for _, key, value in service["long_ports"] if key == "host_ip"]
+    if published and not any(ip.startswith(_LOOPBACK) for ip in host_ips):
+        out += published
+    return out
+
+
+def _loopback_form(port):
+    """The same port published on 127.0.0.1 only: "4000:4000" -> "127.0.0.1:4000:4000"."""
+    parts = port.strip().strip("'\"").split(":")
+    if len(parts) == 1:
+        parts = [parts[0], parts[0]]
+    return "127.0.0.1:" + ":".join(parts[-2:])
+
+
+def _is_litellm(image):
+    parsed = _image_tag(image or "")
+    return bool(parsed) and "litellm" in parsed[0].lower()
+
+
+def _is_database(image):
+    name = (image or "").rsplit("/", 1)[-1].split(":", 1)[0].lower()
+    return name.startswith(_DATABASE_IMAGES)
+
+
+def _network_checks(services):
+    findings = []
+    for name, service in services.items():
+        if not _is_litellm(service["image"]):
+            continue
+        for where, port in _exposed_ports(service):
+            findings.append(Finding(
+                LOOK, "proxy-on-all-interfaces",
+                f"the {name} service publishes port {port} on every network interface",
+                where,
+                "the proxy and its Admin UI answer anyone who can reach this machine, which on a server with a "
+                "public IP means the internet. That's how exposed gateways get found and tried.",
+                f'publish it on 127.0.0.1 only ("{_loopback_form(port)}") behind a reverse proxy or VPN, '
+                "or keep the machine on a private network and firewall the port.",
+                DOCS["security"]))
+    return findings
+
+
+def _db_password(url):
+    """The password in postgresql://user:password@host/db, or None."""
+    m = re.match(r"^[a-z0-9+]+://[^:/@]*:([^@]*)@", url or "", re.I)
+    return m.group(1) if m else None
+
+
+def _database_checks(settings, configs, services, env):
+    findings = []
+    urls = [(s.where, s.value) for s in settings if s.name == "DATABASE_URL" and s.value]
+    for path, entries in configs:
+        for e in entries:
+            if e.key == "database_url" and e.value:
+                value, _ = _config_value(e.value, env)
+                if value:
+                    urls.append((_where(path, e.line), value))
+
+    weak = [(where, pw) for where, pw in ((w, _db_password(u)) for w, u in urls) if pw is not None]
+    weak += [(s.where, s.value) for s in settings if s.name == "POSTGRES_PASSWORD" and s.value is not None]
+    weak = [(where, pw) for where, pw in weak if pw.lower() in DEFAULT_DB_PASSWORDS or not pw]
+    exposed = [(name, where, port) for name, service in services.items() if _is_database(service["image"])
+               for where, port in _exposed_ports(service)]
+
+    if weak:
+        places = list(dict.fromkeys(where for where, _ in weak))
+        open_db = exposed[0] if exposed else None
+        findings.append(Finding(
+            FIX_NOW if open_db else LOOK, "default-db-password",
+            f'the database password is "{weak[0][1]}"'
+            + (f", and the {open_db[0]} service publishes {open_db[2]} on every interface" if open_db else ""),
+            ", ".join(places + ([open_db[1]] if open_db else [])),
+            "the database holds your virtual keys, spend and, encrypted, your provider keys. "
+            + ("With its port open and a password from the docs, anyone who finds it is in."
+               if open_db else "It's only reachable inside Docker's network as long as its port stays unpublished."),
+            "set a long random password in both POSTGRES_PASSWORD and DATABASE_URL"
+            + (" and stop publishing the database port." if open_db else "."),
+            DOCS["security"]))
+    elif exposed:
+        name, where, port = exposed[0]
+        findings.append(Finding(
+            LOOK, "db-on-all-interfaces",
+            f"the {name} database publishes port {port} on every network interface",
+            where,
+            "LiteLLM only needs to reach it inside Docker's network. Published, it's one password away from "
+            "your virtual keys and spend.",
+            "remove its ports: section, or publish it on 127.0.0.1 only.",
+            DOCS["security"]))
+
+    has_salt = any(s.name == "LITELLM_SALT_KEY" and s.value != "" for s in settings)
+    if urls and not has_salt:
+        findings.append(Finding(
+            LOOK, "no-salt-key",
+            "a database but no LITELLM_SALT_KEY in these files",
+            urls[0][0],
+            "without it, the provider keys stored in the database are encrypted with the master key, so whoever "
+            "gets the master key can read them too, and changing the master key means migrating them.",
+            "on a new setup, set LITELLM_SALT_KEY to a long random value and never change it. On a database "
+            "that already has keys in it, don't just add it: follow LiteLLM's master key rotation guide. "
+            "If it's set outside these files, ignore this.",
+            DOCS["master_key"]))
+    return findings
+
+
+_SECRET_NAME = re.compile(r"(_KEY|_SECRET|_PASSWORD|_TOKEN)$|^DATABASE_URL$", re.I)
+
+
+def _git_checks(files):
+    """An env file with secrets in it, committed to git."""
+    import shutil
+    import subprocess
+
+    if not shutil.which("git"):
+        return []
+    findings = []
+    for path, kind, text in files:
+        if kind != "env":
+            continue
+        secrets = [name for _, name, value in read_env(text) if value and _SECRET_NAME.search(name)]
+        if not secrets:
+            continue
+        try:
+            tracked = subprocess.run(
+                ["git", "-C", str(path.parent), "ls-files", "--error-unmatch", "--", path.name],
+                capture_output=True, timeout=10).returncode == 0
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if tracked:
+            findings.append(Finding(
+                FIX_NOW, "env-in-git",
+                f"{path.name} is committed to git, with {', '.join(secrets[:3])}"
+                + (f" and {len(secrets) - 3} more" if len(secrets) > 3 else ""),
+                str(path),
+                "everyone who can clone the repo has these keys, and they stay in its history after you delete "
+                "the file. Keys left in code and public files are how AI keys are being stolen right now.",
+                f"rotate those keys first, then git rm --cached {path.name}, add it to .gitignore and commit. "
+                "If the repo was ever public, assume the old keys are out.",
+                DOCS["security"]))
     return findings
 
 

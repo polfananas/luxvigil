@@ -212,3 +212,99 @@ def test_cli_wrong_file(tmp_path, capsys):
     write(tmp_path, {"notes.yaml": "hello: world\n"})
     assert main(["audit-config", str(tmp_path / "notes.yaml")]) == 1
     assert "doesn't look like" in capsys.readouterr().err
+
+
+# ------------------------------------------------------------ network, database, git (0.4.1)
+
+
+def compose(service_lines, image="ghcr.io/berriai/litellm:v1.90.0", name="litellm"):
+    return f"services:\n  {name}:\n    image: {image}\n" + "".join(f"    {line}\n" for line in service_lines)
+
+
+@pytest.mark.parametrize("ports,flagged", [
+    (['ports:', '  - "4000:4000"'], True),
+    (['ports:', '  - "0.0.0.0:4000:4000"'], True),
+    (['ports:', '  - 4000'], True),
+    (['ports:', '  - "127.0.0.1:4000:4000"'], False),
+    (['ports:', '  - "[::1]:4000:4000"'], False),
+    (['ports:', '  - target: 4000', '    published: 4000'], True),
+    (['ports:', '  - target: 4000', '    published: 4000', '    host_ip: 127.0.0.1'], False),
+    ([], False),
+])
+def test_proxy_port_on_every_interface(tmp_path, ports, flagged):
+    write(tmp_path, {"docker-compose.yml": compose(ports)})
+    assert ("proxy-on-all-interfaces" in checks(tmp_path)) == flagged
+
+
+def test_port_fix_suggests_loopback(tmp_path):
+    write(tmp_path, {"docker-compose.yml": compose(['ports:', '  - "4000:4000"'])})
+    found = [f for f in audit([tmp_path]).findings if f.check == "proxy-on-all-interfaces"]
+    assert '"127.0.0.1:4000:4000"' in found[0].fix
+
+
+def test_other_services_ports_are_not_the_proxy(tmp_path):
+    write(tmp_path, {"docker-compose.yml": compose(['ports:', '  - "3000:3000"'], image="grafana/grafana:11.0.0",
+                                                   name="grafana")})
+    assert "proxy-on-all-interfaces" not in checks(tmp_path)
+
+
+DB = ("  db:\n    image: postgres:16\n    environment:\n      POSTGRES_PASSWORD: {pw}\n{ports}")
+
+
+def test_default_db_password_is_worth_a_look(tmp_path):
+    write(tmp_path, {"docker-compose.yml": "services:\n" + DB.format(pw="dbpassword9090", ports="")})
+    found = [f for f in audit([tmp_path]).findings if f.check == "default-db-password"]
+    assert [f.level for f in found] == ["worth a look"]
+
+
+def test_default_db_password_with_open_port_is_fix_now(tmp_path):
+    write(tmp_path, {"docker-compose.yml": "services:\n" + DB.format(
+        pw="dbpassword9090", ports='    ports:\n      - "5432:5432"\n')})
+    found = [f for f in audit([tmp_path]).findings if f.check == "default-db-password"]
+    assert [f.level for f in found] == ["fix now"]
+    assert "5432:5432" in found[0].title
+
+
+def test_open_db_port_with_strong_password(tmp_path):
+    write(tmp_path, {"docker-compose.yml": "services:\n" + DB.format(
+        pw="a-long-random-one-9f8e7d", ports='    ports:\n      - "5432:5432"\n')})
+    assert checks(tmp_path) == ["db-on-all-interfaces"]
+
+
+def test_default_password_in_database_url_from_config(tmp_path):
+    write(tmp_path, {
+        ".env": f"DB=postgresql://llmproxy:dbpassword9090@db:5432/litellm\nLITELLM_SALT_KEY={STRONG}\n",
+        "config.yaml": "general_settings:\n  database_url: os.environ/DB\n",
+    })
+    assert checks(tmp_path) == ["default-db-password"]
+
+
+@pytest.mark.parametrize("salt,flagged", [("", True), (f"LITELLM_SALT_KEY={STRONG}\n", False)])
+def test_salt_key(tmp_path, salt, flagged):
+    write(tmp_path, {".env": f"DATABASE_URL=postgresql://u:a-long-random-one@db/litellm\n{salt}"})
+    assert ("no-salt-key" in checks(tmp_path)) == flagged
+
+
+def test_no_database_no_salt_warning(tmp_path):
+    write(tmp_path, {".env": "OPENAI_API_KEY=sk-x\n"})
+    assert "no-salt-key" not in checks(tmp_path)
+
+
+def _git(folder, *args):
+    import subprocess
+    subprocess.run(["git", "-C", str(folder), *args], check=True, capture_output=True)
+
+
+@pytest.mark.parametrize("tracked", [True, False])
+def test_env_committed_to_git(tmp_path, tracked):
+    import shutil
+    if not shutil.which("git"):
+        pytest.skip("no git")
+    write(tmp_path, {".env": "OPENAI_API_KEY=sk-proj-abc\nLOG_LEVEL=info\n"})
+    _git(tmp_path, "init", "-q")
+    if tracked:
+        _git(tmp_path, "add", ".env")
+    found = [f for f in audit([tmp_path]).findings if f.check == "env-in-git"]
+    assert bool(found) == tracked
+    if tracked:
+        assert "OPENAI_API_KEY" in found[0].title and "sk-proj-abc" not in found[0].title
