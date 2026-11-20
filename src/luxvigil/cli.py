@@ -134,6 +134,9 @@ def main(argv=None):
                        help="folders or files: config.yaml, .env, docker-compose.yml, requirements.txt "
                             "(default: this folder)")
     audit.add_argument("--json", action="store_true", help="print the findings as JSON instead")
+    audit.add_argument("--fail-on", choices=["fix-now", "worth-a-look"], default=None,
+                       help="exit with 1 when there's a finding at this level or above, for CI "
+                            "(by default it exits with 0 whatever it finds)")
 
     args = parser.parse_args(argv)
 
@@ -182,6 +185,11 @@ def main(argv=None):
             print(json.dumps(audit_config.to_dict(result), indent=2, ensure_ascii=False))
         else:
             print("\n".join(shown(line, limit=1000) for line in audit_config.render_text(result)))
+        failing = {"fix-now": result.fix_now, "worth-a-look": result.findings}.get(args.fail_on, [])
+        if failing:
+            _say(f"luxvigil: {len(failing)} finding{'s' if len(failing) != 1 else ''} at "
+                 f"--fail-on {args.fail_on} or above")
+            return 1
         return 0
 
     if args.command == "demo":

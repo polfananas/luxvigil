@@ -209,6 +209,25 @@ are shown cut short (`sk-p… (40 characters)`), never whole. Settings you make 
 secret manager, Kubernetes, your shell) aren't in these files, so it can't see them. `--json` prints
 the findings as data.
 
+To keep it checking on every push, run it in CI with `--fail-on fix-now`: it exits with 1 when
+there's something to fix now (or with `--fail-on worth-a-look`, anything at all), and with 0
+otherwise. In GitHub Actions, with your LiteLLM files in `deploy/`:
+
+```yaml
+# .github/workflows/litellm-config.yml
+name: litellm config
+on: [push, pull_request]
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
+        with:
+          python-version: "3.12"
+      - run: pipx run --spec "luxvigil>=0.4.1" luxvigil audit-config deploy/ --fail-on fix-now
+```
+
 ### JSON
 
 Want to feed it into something else? `--json` prints the same report as data. Every finding has a stable id (same logs, same ids), how strong it is, what its cost covers, the evidence behind it, what could explain it innocently and what to check next:

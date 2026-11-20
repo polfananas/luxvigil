@@ -6,6 +6,8 @@
   published on every network interface, the example database password from LiteLLM's
   `docker-compose.yml` (fix now when the database port is published too), and a database without
   `LITELLM_SALT_KEY`
+- `audit-config --fail-on fix-now` (or `worth-a-look`) exits with 1 when it finds something at that
+  level, to run it in CI. README has a GitHub Actions example
 - README: requests LiteLLM doesn't write to its spend logs are invisible to luxvigil too
 - MAINTAINING.md: what the release workflow checks, and why the tag goes on `main`
 
