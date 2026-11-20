@@ -167,6 +167,12 @@ LiteLLM doesn't log emails or countries, so those checks are skipped, and prompt
 if you turned on storing them in spend logs. When they are, luxvigil hashes them on your machine
 and drops the text.
 
+luxvigil only sees what LiteLLM writes down. Some requests succeed without leaving a row in the
+spend logs (LiteLLM has open issues about it, like
+[image requests to Gemini](https://github.com/BerriAI/litellm/issues/49567)), and those stay
+invisible here too. If your spend logs add up to less than your provider's bill, that gap is
+worth a look on its own.
+
 ### Checking a LiteLLM setup
 
 The logs tell you after the fact. Before that, check the files your proxy runs from:
@@ -185,9 +191,18 @@ It reads `config.yaml`, `.env`, `docker-compose.yml` (and any `env_file` it poin
 - LiteLLM older than 1.84.0, which fixes the flaws published this year (one of them on CISA's
   list of vulnerabilities exploited in the wild)
 - an Admin UI password from the docs' examples (`admin`, `langchain`...)
+- an `.env` with keys in it, committed to git
+- the example database password (`dbpassword9090`, from LiteLLM's own `docker-compose.yml`) with
+  the database port open
 
-And what's worth a look: an image that isn't pinned to a version, and no `UI_PASSWORD`, which makes
-the master key the Admin UI password too.
+And what's worth a look:
+
+- an image that isn't pinned to a version
+- no `UI_PASSWORD`, which makes the master key the Admin UI password too
+- the proxy's port published on every network interface (`"4000:4000"` instead of
+  `"127.0.0.1:4000:4000"`)
+- the example database password, or the database port published, on its own
+- a database but no `LITELLM_SALT_KEY`, so the keys stored in it are encrypted with the master key
 
 It only reads files. Nothing is sent anywhere and nothing on your network is touched. Keys it finds
 are shown cut short (`sk-p… (40 characters)`), never whole. Settings you make somewhere else (a
