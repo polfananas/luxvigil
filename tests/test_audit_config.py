@@ -308,3 +308,28 @@ def test_env_committed_to_git(tmp_path, tracked):
     assert bool(found) == tracked
     if tracked:
         assert "OPENAI_API_KEY" in found[0].title and "sk-proj-abc" not in found[0].title
+
+
+# ------------------------------------------------------------ --fail-on, for CI
+
+
+@pytest.mark.parametrize("files,fail_on,code", [
+    ({".env": "LITELLM_MASTER_KEY=sk-1234\n"}, None, 0),
+    ({".env": "LITELLM_MASTER_KEY=sk-1234\n"}, "fix-now", 1),
+    ({".env": "LITELLM_MASTER_KEY=sk-1234\n"}, "worth-a-look", 1),
+    ({".env": f"LITELLM_MASTER_KEY={STRONG}\n"}, "fix-now", 0),  # only a worth-a-look one
+    ({".env": f"LITELLM_MASTER_KEY={STRONG}\n"}, "worth-a-look", 1),
+    ({".env": f"LITELLM_MASTER_KEY={STRONG}\nUI_PASSWORD=a-long-random-password\n"}, "worth-a-look", 0),
+])
+def test_fail_on(tmp_path, capsys, files, fail_on, code):
+    write(tmp_path, files)
+    args = ["audit-config", str(tmp_path)] + (["--fail-on", fail_on] if fail_on else [])
+    assert main(args) == code
+    err = capsys.readouterr().err
+    assert ("--fail-on" in err) == (code == 1)
+
+
+def test_fail_on_with_json(tmp_path, capsys):
+    write(tmp_path, {".env": "LITELLM_MASTER_KEY=sk-1234\n"})
+    assert main(["audit-config", str(tmp_path), "--json", "--fail-on", "fix-now"]) == 1
+    json.loads(capsys.readouterr().out)  # still valid JSON on stdout
