@@ -38,12 +38,14 @@ COLUMNS = {
     "cost_usd": "what that request cost you (optional: without it, pass --price-in/--price-out, "
                 "or the scan runs on requests and tokens only)",
     "prompt_chars": "length of the prompt in characters (optional), so a short \"more\" is never taken for a bot template",
+    "model": "the model that answered (optional), so a missing cost can be worked out with that model's "
+             "price from [prices] in luxvigil.toml",
 }
 
 # Only when, who and how many tokens are a must. Everything else is optional: a
 # missing column just means the checks that need it are skipped (and the report
 # says so). Cost can be worked out from tokens if you pass prices.
-OPTIONAL = {"email", "api_key_id", "ip", "country", "device_id", "prompt_hash", "cost_usd", "prompt_chars"}
+OPTIONAL = {"email", "api_key_id", "ip", "country", "device_id", "prompt_hash", "cost_usd", "prompt_chars", "model"}
 REQUIRED = [c for c in COLUMNS if c not in OPTIONAL]
 
 # Other names people commonly give these columns. Matched without caring about case.
@@ -61,6 +63,7 @@ ALIASES = {
     "output_tokens": ["completion_tokens", "tokens_out"],
     "cost_usd": ["cost", "total_cost", "spend", "response_cost"],
     "prompt_chars": ["prompt_length", "prompt_len", "prompt_chars_count"],
+    "model": ["model_name", "model_id", "llm_model"],
 }
 
 

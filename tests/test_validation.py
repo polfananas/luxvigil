@@ -158,7 +158,7 @@ def write_raw(tmp_path, text, encoding="utf-8"):
     return path
 
 
-HEADER = ",".join(c for c in COLUMNS if c != "prompt_chars")  # ROW below has the 11 classic columns
+HEADER = ",".join(c for c in COLUMNS if c not in ("prompt_chars", "model"))  # ROW below has the 11 classic columns
 ROW = "2026-10-01T00:00:00Z,a,a@gmail.com,k,1.2.3.4,ES,,p,10,10,0.01"
 
 
