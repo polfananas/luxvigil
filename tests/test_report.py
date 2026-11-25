@@ -118,3 +118,14 @@ def test_strong_signal_wins_over_weak():
 def test_buckets_never_exceed_total_spend(sample):
     _, _, report = sample
     assert report.abuse_cost + report.review_cost <= report.total_cost + 1e-9
+
+
+def test_cheap_accounts_copying_a_customers_prompt_dont_make_it_abuse():
+    # 4 accounts spend $0.12 copying a prompt a customer repeats at $100 a go
+    rows = [req("customer", cost=100.0, prompt="P") for _ in range(3)]
+    rows += [req(f"x{k}", prompt="P") for k in range(4) for _ in range(3)]
+    report = build_report(rows)
+    assert round(report.abuse_cost, 2) == 0.12
+    assert report.review_cost == 300.0
+    assert "customer" not in report.flagged_accounts
+    assert "could be a real customer whose prompt got copied" in "\n".join(render_text(report))

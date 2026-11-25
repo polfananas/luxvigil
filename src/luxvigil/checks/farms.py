@@ -188,7 +188,7 @@ def suspect_accounts(requests, bots=None):
     out = set(disposable_by_account(requests, load_disposable_domains()))
 
     for bot in find_prompt_bots(requests) if bots is None else bots:
-        out.update(bot.accounts)
+        out.update(a for a in bot.accounts if a not in bot.big_spenders)
     return out
 
 

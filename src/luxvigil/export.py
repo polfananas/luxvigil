@@ -76,7 +76,8 @@ BASIS = {
 def _money(x, known=True):
     # 4 decimals is plenty for dollars and keeps float noise out of the json.
     # No costs in the logs: null, so nobody reads it as "free"
-    return round(x, 4) if known else None
+    # (+ 0.0 turns the -0.0 a subtraction can leave behind into 0.0)
+    return round(x, 4) + 0.0 if known else None
 
 
 def _date(t):
@@ -142,9 +143,14 @@ def to_dict(report, notes=()):
             {
                 "prompt_hashes": b.prompts,
                 "repeats": b.repeats,
+                # accounts that spent 10x+ the typical member on the repeated prompts: could be
+                # a real customer whose prompt got copied, so worth a look, not likely abuse
+                "big_spenders": b.big_spenders,
+                "big_spenders_requests": b.big_spenders_requests,
+                "big_spenders_cost_usd": _money(b.big_spenders_cost_usd, known),
                 # everything else these accounts did: worth a look, not likely abuse
-                "other_requests": b.requests - b.signal_requests,
-                "other_cost_usd": _money(b.cost_usd - b.signal_cost_usd, known),
+                "other_requests": b.requests - b.signal_requests - b.big_spenders_requests,
+                "other_cost_usd": _money(b.cost_usd - b.signal_cost_usd - b.big_spenders_cost_usd, known),
             },
             *sorted(b.accounts), known=known,
         ))
