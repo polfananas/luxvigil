@@ -127,3 +127,24 @@ def test_cli_config(tmp_path, capsys):
     good = write(tmp_path, '[ignore]\nemails = ["*@mailinator.com"]\n')
     assert main(["scan", str(logs), "--config", str(good)]) == 0
     assert "using" in capsys.readouterr().out
+
+
+def test_prices_per_model(tmp_path):
+    config = load_config(write(tmp_path, '[prices]\n"GPT-4o" = [2.5, 10]\n"claude-*" = [3, 15]\n'))
+    assert config.prices == {"gpt-4o": (2.5, 10.0), "claude-*": (3.0, 15.0)}
+
+
+@pytest.mark.parametrize("value", ["[1]", "[1, 2, 3]", '"2.5"', "[-1, 2]", "[true, 1]", "[nan, 1]"])
+def test_bad_prices_are_caught(tmp_path, value):
+    with pytest.raises(ConfigError, match=r"\[prices\]"):
+        load_config(write(tmp_path, f'[prices]\n"gpt-4o" = {value}\n'))
+
+
+def test_cli_uses_prices_from_the_config(tmp_path, capsys):
+    logs = tmp_path / "logs.csv"
+    logs.write_text("timestamp,account_id,input_tokens,output_tokens,model\n"
+                    "2026-10-01T00:00:00Z,a,1000000,0,cheap-model\n"
+                    "2026-10-01T00:01:00Z,b,1000000,0,big-model\n")
+    config = write(tmp_path, '[prices]\n"cheap-model" = [0.3, 0]\n"big-*" = [30, 0]\n')
+    assert main(["scan", str(logs), "--config", str(config)]) == 0
+    assert "$30.30 spent" in capsys.readouterr().out
