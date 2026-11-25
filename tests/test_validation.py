@@ -203,3 +203,49 @@ def test_prompt_chars_empty_or_missing_means_unknown(tmp_path):
 def test_bad_prompt_chars_is_rejected(tmp_path):
     with pytest.raises(LogFormatError, match="prompt_chars"):
         load_logs(write(tmp_path, {"prompt_chars": "-3"}))
+
+
+def _model_logs(tmp_path):
+    # same tokens, two models that cost very different things, no cost column
+    path = tmp_path / "logs.csv"
+    path.write_text("timestamp,account_id,input_tokens,output_tokens,model\n"
+                    "2026-10-01T00:00:00Z,a,1000000,0,cheap-model\n"
+                    "2026-10-01T00:01:00Z,b,1000000,0,big-model\n")
+    return path
+
+
+def test_each_model_gets_its_own_price(tmp_path):
+    notes = []
+    rows = load_logs(_model_logs(tmp_path), prices={"cheap-model": (0.3, 0), "big-*": (30, 0)}, notes=notes)
+    assert [round(r.cost_usd, 2) for r in rows] == [0.3, 30.0]
+    assert any("worked out from the model's price" in n for n in notes)
+
+
+def test_one_price_for_several_models_gets_a_warning(tmp_path):
+    notes = []
+    rows = load_logs(_model_logs(tmp_path), price_in=3, price_out=3, notes=notes)
+    assert sum(r.cost_usd for r in rows) == 6.0  # what you asked for, but it's off
+    assert any("2 different models" in n and "[prices]" in n for n in notes)
+
+
+def test_a_model_without_a_price_falls_back_or_is_unknown(tmp_path):
+    prices = {"big-model": (30, 0)}
+    rows = load_logs(_model_logs(tmp_path), prices=prices, price_in=1, price_out=1)
+    assert [r.cost_usd for r in rows] == [1.0, 30.0]  # the cheap one gets --price-in
+    notes = []
+    rows = load_logs(_model_logs(tmp_path), prices=prices, notes=notes)
+    assert [r.cost_known for r in rows] == [False, True]  # unknown, not free
+    assert any("no price in [prices] for cheap-model" in n for n in notes)
+
+
+def test_a_cost_in_the_logs_beats_any_price(tmp_path):
+    path = write(tmp_path, {"cost_usd": "0.5"}, header=[*[c for c in COLUMNS if c != "model"], "model"])
+    (row,) = load_logs(path, prices={"*": (100, 100)})
+    assert row.cost_usd == 0.5
+
+
+def test_prices_without_a_model_column_say_so(tmp_path):
+    notes = []
+    path = write(tmp_path, {"cost_usd": ""}, header=[c for c in COLUMNS if c != "model"])
+    load_logs(path, prices={"x": (1, 1)}, notes=notes)
+    assert any("no model column" in n for n in notes)

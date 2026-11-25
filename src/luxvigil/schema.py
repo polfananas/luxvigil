@@ -14,8 +14,10 @@ import hashlib
 import ipaddress
 import math
 import re
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from fnmatch import fnmatchcase
 from functools import lru_cache
 
 # columns that hold an id for the request itself. Not one of ours (nothing is checked with it),
@@ -210,11 +212,13 @@ FORMATS = ["csv", "litellm"]
 
 
 def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None, skip_bad=False, fmt="csv",
-              keep_duplicates=False, drop_duplicates=False):
+              keep_duplicates=False, drop_duplicates=False, prices=None):
     """Read a log file and return a list of Request. Fails loudly on bad input.
 
     mapping: {our_column: their_column} for files that name things differently.
     price_in / price_out: $ per 1M tokens, used to work out the cost when there's no cost column.
+    prices: {model: ($ in, $ out)} from [prices] in luxvigil.toml. With a model column, a request
+    with no cost uses its model's price first, and price_in / price_out only for models not in it.
     notes: pass a list to get told which columns were matched automatically, and about duplicates etc.
     skip_bad: skip rows that don't parse instead of stopping (you're told how many and why).
     fmt: "csv" for our own columns (the default), or the export of a tool we know, like "litellm".
@@ -237,7 +241,7 @@ def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None, ski
         if not records:
             raise LogFormatError("no requests in this LiteLLM export")
         return _read_rows(fieldnames, records, None, price_in, price_out, notes, skip_bad, "request",
-                          keep_duplicates, drop_duplicates)
+                          keep_duplicates, drop_duplicates, prices)
     if fmt != "csv":
         raise LogFormatError(f"unknown format '{fmt}', use one of: {', '.join(FORMATS)}")
 
@@ -250,7 +254,18 @@ def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None, ski
         f.seek(0)
         reader = csv.DictReader(f, delimiter=_separator(first_line))
         return _read_rows(reader.fieldnames, reader, mapping, price_in, price_out, notes, skip_bad, "line",
-                          keep_duplicates, drop_duplicates)
+                          keep_duplicates, drop_duplicates, prices)
+
+
+def price_for(model, prices):
+    """($ in, $ out) per 1M tokens for this model from [prices], or None.
+    The exact name wins, then the first pattern that matches. `prices` keys are lowercase."""
+    name = model.strip().lower()
+    if not name or not prices:
+        return None
+    if name in prices:
+        return prices[name]
+    return next((p for pattern, p in prices.items() if fnmatchcase(name, pattern)), None)
 
 
 def _rows(n):
@@ -266,7 +281,7 @@ def _cost_or_zero(r, cols):
 
 
 def _read_rows(fieldnames, records, mapping, price_in, price_out, notes, skip_bad, unit, keep_duplicates=False,
-               drop_duplicates=False):
+               drop_duplicates=False, prices=None):
     """Check and turn rows (dicts) into Requests. `unit` is how errors point at a row: line or request."""
     cols, found = resolve_columns(fieldnames, mapping)
     if notes is not None:
@@ -279,7 +294,11 @@ def _read_rows(fieldnames, records, mapping, price_in, price_out, notes, skip_ba
             f"If they're there under another name, use --map, e.g. --map {missing[0]}=your_column_name"
         )
     priced = price_in is not None and price_out is not None
-    if "cost_usd" not in cols and not priced and notes is not None:
+    per_model = bool(prices) and "model" in cols
+    if prices and "model" not in cols and notes is not None:
+        notes.append("there are prices per model in [prices], but these logs have no model column, so they "
+                     "aren't used. If the model is there under another name, use --map model=your_column")
+    if "cost_usd" not in cols and not priced and not per_model and notes is not None:
         # still worth scanning: farms, keys and bots don't need dollars, only the spike check does
         notes.append("no cost column and no --price-in/--price-out, so there are no dollar amounts in this "
                      "report and spend spikes can't be checked. Add a cost_usd column (or --map cost_usd=...) "
@@ -305,6 +324,10 @@ def _read_rows(fieldnames, records, mapping, price_in, price_out, notes, skip_ba
 
     skipped, first_error = 0, None
     unknown_cost, estimated_cost, redacted_keys = 0, 0, 0
+    # no cost in the logs: priced by its model, by the one global price (and which models got it),
+    # or left unknown because its model has no price
+    by_model, by_global, global_models, unpriced_models = 0, 0, set(), defaultdict(int)
+    rate_of = {}  # model -> its price, looked up once
     # a CSV's first row is line 2 (the header is line 1), an API export just counts requests
     for line, r in enumerate(records, start=2 if unit == "line" else 1):
         try:
@@ -336,14 +359,26 @@ def _read_rows(fieldnames, records, mapping, price_in, price_out, notes, skip_ba
             # the cost is known (in the logs), worked out (from prices) or unknown. An empty
             # cell is unknown, not free: only an explicit 0 means the request cost nothing
             raw_cost = r[cols["cost_usd"]].strip() if "cost_usd" in cols else ""
+            model = cell(r, "model")
             cost_known = True
             if raw_cost:
                 cost = _money(raw_cost, "cost_usd")
-            elif priced:
-                cost = (tin * price_in + tout * price_out) / 1_000_000
-                estimated_cost += "cost_usd" in cols  # a blank in a cost column, filled in from prices
             else:
-                cost, cost_known = 0.0, False
+                if model not in rate_of:
+                    rate_of[model] = price_for(model, prices) if per_model else None
+                rate = rate_of[model]
+                if rate:
+                    cost = (tin * rate[0] + tout * rate[1]) / 1_000_000
+                    by_model += 1
+                elif priced:
+                    cost = (tin * price_in + tout * price_out) / 1_000_000
+                    estimated_cost += "cost_usd" in cols  # a blank in a cost column, filled in from prices
+                    by_global += 1
+                    global_models.add(model)
+                else:
+                    cost, cost_known = 0.0, False
+                    if per_model and model:
+                        unpriced_models[model] += 1
             # optional, and an empty cell just means "don't know"
             raw_chars = r[cols["prompt_chars"]].strip() if "prompt_chars" in cols else ""
             chars = _tokens(raw_chars, "prompt_chars") if raw_chars else None
@@ -403,6 +438,22 @@ def _read_rows(fieldnames, records, mapping, price_in, price_out, notes, skip_ba
         if unknown_cost and "cost_usd" in cols:
             notes.append(f"{unknown_cost:,} of {len(rows):,} requests have no cost in the logs: they count as "
                          "unknown, not as free, and the dollar totals only cover the rest")
+        if by_model:
+            notes.append(f"{by_model:,} request{'s' if by_model != 1 else ''} with no cost in the logs, worked out "
+                         "from the model's price in [prices]")
+        named = sorted(m for m in global_models if m)
+        if by_global and len(named) > 1:
+            shown_models = ", ".join(named[:3]) + (f" and {len(named) - 3} more" if len(named) > 3 else "")
+            notes.append(f"{by_global:,} requests from {len(named)} different models ({shown_models}) got the same "
+                         "--price-in/--price-out, so their $ can be way off. Put a price per model under "
+                         "[prices] in luxvigil.toml")
+        if unpriced_models:
+            top = sorted(unpriced_models, key=unpriced_models.get, reverse=True)
+            n = sum(unpriced_models.values())
+            names = ", ".join(top[:3]) + (f" and {len(top) - 3} more" if len(top) > 3 else "")
+            have = "have" if n != 1 else "has"
+            notes.append(f"no price in [prices] for {names}: {n:,} request{'s' if n != 1 else ''} from "
+                         f"them {have} an unknown cost. Add them, or pass --price-in/--price-out for the rest")
         if estimated_cost:
             notes.append(f"{estimated_cost:,} request{'s' if estimated_cost != 1 else ''} with no cost in the logs, "
                          "worked out from --price-in/--price-out instead")
