@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- prices per model: an optional `model` column (read from LiteLLM logs too) and a `[prices]` section in
+  `luxvigil.toml`, so requests with no cost get their own model's price. Before, `--price-in`/`--price-out`
+  was one price for everything: two requests with the same tokens on a $0.30 and a $30 model both came
+  out at $3. Now there's a note when several models share one price, and models with no price are an
+  unknown cost, not a guess
 - copy-paste bots: an account that spent more than 10x the group's median on the repeated prompts
   is worth a look now, not likely abuse, and the report says so. Before, 4 accounts spending $0.12
   could copy a prompt a customer repeats and put the customer's $300 in likely abuse. In `--json`

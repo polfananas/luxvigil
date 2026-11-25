@@ -128,6 +128,7 @@ everything's fine.
 | `device_id` | device / browser fingerprint | farms |
 | `prompt_hash` | hash of the prompt, so repeated prompts show up without storing them | copy-paste bots |
 | `prompt_chars` | length of the prompt in characters | lets the bot check ignore "more", "continue"... |
+| `model` | the model that answered | prices per model when there's no cost (below) |
 
 ### Your columns are called something else?
 
@@ -142,6 +143,8 @@ No cost column? Give it your prices per 1M tokens and it works it out:
 ```
 $ luxvigil scan logs.csv --price-in 3 --price-out 15
 ```
+
+That's one price for everything. If your logs mix models (a cheap one and a big one can be 100x apart), add a `model` column and put a price per model in `luxvigil.toml` (see below). Models in `[prices]` get their own price, the rest fall back to `--price-in`/`--price-out` if you pass them, otherwise their cost is unknown. luxvigil warns you when several models end up sharing one price.
 
 No cost and no prices still works: every check that doesn't need dollars runs, the report shows requests instead of money, and the spike check is skipped. Some rows with an empty cost? Those count as unknown, not free, and the report says how many there are.
 
@@ -270,6 +273,10 @@ keys = ["key_ci_*"]
 
 [farms]
 window_days = 30  # how close together accounts have to show up on a device (0 = no limit)
+
+[prices]  # $ per 1M tokens, [input, output], only used when a request has no cost in the logs
+"gpt-4o" = [2.5, 10]
+"claude-sonnet-*" = [3, 15]  # the exact name wins, then the first pattern that matches
 ```
 
 Trusted networks and devices are still checked, they just never link accounts into a farm. Ignored accounts are skipped completely, but still count towards your total spend. `window_days` is 30 by default: a reasonable guess for how fast farms sign up, not a measured number (see [benchmarks/](https://github.com/polfananas/luxvigil/tree/main/benchmarks) for what changing it does on the one labeled dataset we have).
