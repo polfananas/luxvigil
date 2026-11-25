@@ -289,9 +289,15 @@ def _spike_line(spikes):
 
 def _bot_line(report, b):
     line = f"     - {b.why}  ·  {b.signal_requests:,} repeated requests{_usd(report, b.signal_cost_usd)}"
-    if b.requests > b.signal_requests:
-        rest = _usd(report, b.cost_usd - b.signal_cost_usd, before=", ~")
-        line += f" (+{b.requests - b.signal_requests:,} other requests{rest}, worth a look)"
+    if b.big_spenders:
+        who = _plural(len(b.big_spenders), "account")
+        big = _usd(report, b.big_spenders_cost_usd, before=", ~")
+        line += (f" ({who} spent way more than the rest on it, {b.big_spenders_requests:,} requests{big}, "
+                 "worth a look: could be a real customer whose prompt got copied)")
+    others = b.requests - b.signal_requests - b.big_spenders_requests
+    if others:
+        rest = _usd(report, b.cost_usd - b.signal_cost_usd - b.big_spenders_cost_usd, before=", ~")
+        line += f" (+{others:,} other requests{rest}, worth a look)"
     return line
 
 
