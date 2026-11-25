@@ -154,4 +154,4 @@ def test_two_requests_in_the_same_second_are_two_but_a_repeated_one_is_one(tmp_p
     notes = []
     rows = load_logs(write_json(tmp_path, [a, b, dict(a)]), fmt="litellm", notes=notes)
     assert len(rows) == 2  # a was exported twice
-    assert any("1 duplicate row" in n for n in notes)
+    assert any("1 row repeats a request id" in n and "left out" in n for n in notes)
