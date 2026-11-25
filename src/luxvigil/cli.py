@@ -42,6 +42,8 @@ def _bad_args(args):
         # nan and inf get through float(), and would turn every cost into nan
         if value is not None and (not math.isfinite(value) or value < 0):
             return f"--{name.replace('_', '-')} should be a price of 0 or more, got {value}"
+    if args.quota_per_usd is not None and (not math.isfinite(args.quota_per_usd) or args.quota_per_usd <= 0):
+        return f"--quota-per-usd should be more than 0, got {args.quota_per_usd}"
     # with 1 every single account would be its own "farm" or shared key
     if args.min_farm < 2:
         return f"--min-farm should be 2 or more, got {args.min_farm}"
@@ -108,7 +110,8 @@ def main(argv=None):
     scan.add_argument("--json", action="store_true",
                       help="print the report as JSON instead (findings with ids, evidence and next steps)")
     scan.add_argument("--format", choices=FORMATS, default="csv",
-                      help="csv with our columns (default), or litellm to read LiteLLM spend logs as they come")
+                      help="csv with our columns (default), or the logs of a gateway as they come: litellm "
+                           "(LiteLLM spend logs), new-api or one-api (their usage logs)")
     scan.add_argument("--skip-bad-rows", action="store_true",
                       help="skip rows that can't be read instead of stopping (you're told how many)")
     dupes = scan.add_mutually_exclusive_group()
@@ -117,6 +120,12 @@ def main(argv=None):
     dupes.add_argument("--drop-duplicates", action="store_true",
                        help="also drop rows that are an exact copy of an earlier one when there's no request id "
                             "(by default they're kept, since they could be real repeated requests)")
+    scan.add_argument("--users", metavar="PATH",
+                      help="with --format new-api/one-api: the users table (CSV, or /api/user/ as JSON), "
+                           "to bring in emails. Only id, username and email are read")
+    scan.add_argument("--quota-per-usd", type=float, metavar="QUOTA",
+                      help="with --format new-api/one-api: how much quota is $1, if you changed QuotaPerUnit "
+                           "(default 500000)")
     scan.add_argument("--price-in", type=float, metavar="USD",
                       help="$ per 1M input tokens, to work out cost when your logs don't have it "
                            "(one price for every model: for several, use [prices] in luxvigil.toml)")
@@ -162,13 +171,15 @@ def main(argv=None):
             rows = load_logs(args.logs, mapping=mapping, price_in=args.price_in, price_out=args.price_out,
                              notes=notes, skip_bad=args.skip_bad_rows, fmt=args.format,
                              keep_duplicates=args.keep_duplicates, drop_duplicates=args.drop_duplicates,
-                             prices=config.prices)
+                             prices=config.prices, quota_per_usd=args.quota_per_usd,
+                             users=args.users)
         except (OSError, LogFormatError) as e:
             _say(f"luxvigil: can't read {args.logs}: {e}")
             return 1
         except (csv.Error, UnicodeDecodeError, json.JSONDecodeError) as e:
             # a broken export, a binary file, a single field of megabytes...: say so, no traceback
-            kind = "LiteLLM export" if args.format == "litellm" else "UTF-8 CSV"
+            kind = {"litellm": "LiteLLM export", "new-api": "New API export",
+                    "one-api": "One API export"}.get(args.format, "UTF-8 CSV")
             _say(f"luxvigil: can't read {args.logs}, it doesn't look like a valid {kind}: {e}")
             return 1
         # notes go to stderr so --json output stays clean to pipe into jq

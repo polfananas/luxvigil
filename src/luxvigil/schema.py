@@ -208,11 +208,11 @@ def resolve_columns(fieldnames, mapping=None):
     return resolved, notes
 
 
-FORMATS = ["csv", "litellm"]
+FORMATS = ["csv", "litellm", "new-api", "one-api"]  # one-api: same logs as new-api
 
 
 def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None, skip_bad=False, fmt="csv",
-              keep_duplicates=False, drop_duplicates=False, prices=None):
+              keep_duplicates=False, drop_duplicates=False, prices=None, quota_per_usd=None, users=None):
     """Read a log file and return a list of Request. Fails loudly on bad input.
 
     mapping: {our_column: their_column} for files that name things differently.
@@ -222,6 +222,8 @@ def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None, ski
     notes: pass a list to get told which columns were matched automatically, and about duplicates etc.
     skip_bad: skip rows that don't parse instead of stopping (you're told how many and why).
     fmt: "csv" for our own columns (the default), or the export of a tool we know, like "litellm".
+    quota_per_usd: for "new-api" / "one-api", how much quota is $1 if it's not the default 500,000.
+    users: for "new-api" / "one-api", the users table, to bring in each account's email.
     Duplicates: a row is only dropped when the file proves it's the same request, i.e. it
     repeats a request id (a request_id column, or LiteLLM's) that's already been seen.
     keep_duplicates: keep those too.
@@ -242,6 +244,19 @@ def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None, ski
             raise LogFormatError("no requests in this LiteLLM export")
         return _read_rows(fieldnames, records, None, price_in, price_out, notes, skip_bad, "request",
                           keep_duplicates, drop_duplicates, prices)
+    if fmt in ("new-api", "one-api"):
+        if mapping:
+            raise LogFormatError(f"--map doesn't go with --format {fmt}, the columns are already known")
+        from luxvigil.formats.newapi import read_newapi
+
+        fieldnames, records = read_newapi(path, notes, quota_per_usd, users)
+        if not records:
+            raise LogFormatError("no usage rows in this export (only type 2 logs are requests)")
+        return _read_rows(fieldnames, records, None, price_in, price_out, notes, skip_bad, "request",
+                          keep_duplicates, drop_duplicates, prices)
+    if quota_per_usd is not None or users is not None:
+        flag = "--quota-per-usd" if quota_per_usd is not None else "--users"
+        raise LogFormatError(f"{flag} only goes with --format new-api or one-api")
     if fmt != "csv":
         raise LogFormatError(f"unknown format '{fmt}', use one of: {', '.join(FORMATS)}")
 
