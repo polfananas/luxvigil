@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.5.0
+
+Mostly about getting the dollars right: duplicates, mixed models and one big spender in a bot group no longer bend the totals, and `audit-config` can now run in CI. Heads up: by default, exact copies with no request id are kept now instead of dropped, so totals on those logs can go up. `--drop-duplicates` gives you the old behaviour.
 
 - prices per model: an optional `model` column (read from LiteLLM logs too) and a `[prices]` section in
   `luxvigil.toml`, so requests with no cost get their own model's price. Before, `--price-in`/`--price-out`
