@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- `--format new-api` (or `one-api`) reads New API and One API usage logs as they come: the export
+  (JSON lines), the log list API, or the `logs` table as CSV. Only usage rows count, the $ is the quota
+  each request took (`--quota-per-usd` if you changed `QuotaPerUnit`). `--users` brings in emails from
+  the `users` table, which the disposable email check and network farms need
+- README: the CI example asked for `luxvigil>=0.4.1`, a version that was never released. `--fail-on`
+  came in 0.5.0
+
 ## 0.5.0
 
 Mostly about getting the dollars right: duplicates, mixed models and one big spender in a bot group no longer bend the totals, and `audit-config` can now run in CI. Heads up: by default, exact copies with no request id are kept now instead of dropped, so totals on those logs can go up. `--drop-duplicates` gives you the old behaviour.
