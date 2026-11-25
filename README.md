@@ -84,7 +84,7 @@ The checks:
 
 Every flag tells you *why* it fired. No black box.
 
-The report keeps two totals apart. **Likely abuse** is what comes from strong signals: what a farm's accounts did on the devices and networks they share, the requests a copy-paste bot sent with its repeated prompts, and the requests from abroad on a key used from all over the world. **Worth a look** is for signals that often have an innocent explanation: a throwaway email (someone testing), accounts on one Gmail inbox (someone with a test account), whatever else a bot's or a farm's accounts did, accounts sharing a device that don't add up to a farm, and spend spikes (a launch, a batch job). Each request is counted once, in the stronger of the two, so one account can have some of each.
+The report keeps two totals apart. **Likely abuse** is what comes from strong signals: what a farm's accounts did on the devices and networks they share, the requests a copy-paste bot sent with its repeated prompts, and the requests from abroad on a key used from all over the world. **Worth a look** is for signals that often have an innocent explanation: a throwaway email (someone testing), accounts on one Gmail inbox (someone with a test account), whatever else a bot's or a farm's accounts did, a bot account that spent 10x+ what the rest did on the repeated prompts (more likely a customer whose prompt got copied), accounts sharing a device that don't add up to a farm, and spend spikes (a launch, a batch job). Each request is counted once, in the stronger of the two, so one account can have some of each.
 
 Neither total is money you've lost. They're what the requests behind the signals cost, and someone still has to look at them to say if it was abuse.
 

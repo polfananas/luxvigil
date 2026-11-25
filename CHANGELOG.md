@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- copy-paste bots: an account that spent more than 10x the group's median on the repeated prompts
+  is worth a look now, not likely abuse, and the report says so. Before, 4 accounts spending $0.12
+  could copy a prompt a customer repeats and put the customer's $300 in likely abuse. In `--json`
+  they're under `big_spenders`
 - duplicates: a row is only left out when it repeats a request id already seen. Exact copies with
   no request id are kept now (they could be a bot sending the same thing twice in a second), and the
   report says how many there are and how many requests and dollars they add. `--drop-duplicates`
