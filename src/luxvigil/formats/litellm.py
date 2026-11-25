@@ -144,8 +144,8 @@ def read_litellm(path, notes=None):
             identity[source] += 1
         spend = _get(record, "spend")
         rows.append({
-            # not one of our columns, but it makes two different requests that look alike
-            # (same user, second and tokens) different rows, so they're not taken as duplicates
+            # not one of our columns, but it's what tells a request exported twice (same id)
+            # from two requests that look alike (same user, second and tokens)
             "request_id": _get(record, "request_id"),
             "timestamp": _get(record, "startTime"),
             "account_id": account,
@@ -175,5 +175,5 @@ def read_litellm(path, notes=None):
         if rows and without_ip == len(rows):
             notes.append("no IPs in these logs (requester_ip_address is empty), so farms can't be linked by network")
     # no IPs at all: leave the column out, so it's not reported as thousands of "bad" IPs
-    columns = [c for c in COLUMNS if c != "ip"] if rows and without_ip == len(rows) else COLUMNS
-    return columns, rows
+    columns = [c for c in COLUMNS if c != "ip"] if rows and without_ip == len(rows) else list(COLUMNS)
+    return [*columns, "request_id"], rows

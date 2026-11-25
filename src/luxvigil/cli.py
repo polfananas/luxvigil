@@ -111,8 +111,12 @@ def main(argv=None):
                       help="csv with our columns (default), or litellm to read LiteLLM spend logs as they come")
     scan.add_argument("--skip-bad-rows", action="store_true",
                       help="skip rows that can't be read instead of stopping (you're told how many)")
-    scan.add_argument("--keep-duplicates", action="store_true",
-                      help="keep rows that are an exact copy of an earlier one (by default they're counted once)")
+    dupes = scan.add_mutually_exclusive_group()
+    dupes.add_argument("--keep-duplicates", action="store_true",
+                       help="keep rows that repeat a request id already seen (by default they're counted once)")
+    dupes.add_argument("--drop-duplicates", action="store_true",
+                       help="also drop rows that are an exact copy of an earlier one when there's no request id "
+                            "(by default they're kept, since they could be real repeated requests)")
     scan.add_argument("--price-in", type=float, metavar="USD",
                       help="$ per 1M input tokens, to work out cost when your logs don't have it")
     scan.add_argument("--price-out", type=float, metavar="USD",
@@ -156,7 +160,7 @@ def main(argv=None):
             notes = []
             rows = load_logs(args.logs, mapping=mapping, price_in=args.price_in, price_out=args.price_out,
                              notes=notes, skip_bad=args.skip_bad_rows, fmt=args.format,
-                             keep_duplicates=args.keep_duplicates)
+                             keep_duplicates=args.keep_duplicates, drop_duplicates=args.drop_duplicates)
         except (OSError, LogFormatError) as e:
             _say(f"luxvigil: can't read {args.logs}: {e}")
             return 1

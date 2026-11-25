@@ -252,7 +252,7 @@ No raw emails or prompts end up in it, only the ids and hashes already in your l
 
 ### Bad rows
 
-luxvigil stops at the first row it can't trust (a cost of `nan` or `-5`, negative tokens, an empty account id…) and tells you which line, rather than quietly getting the totals wrong. If your export has a few broken rows and you just want the rest, add `--skip-bad-rows` and it'll tell you how many it skipped. Rows that are an exact copy of an earlier one (every column, request id included) are counted once and you're told how many, since a doubled export would otherwise double the cost; `--keep-duplicates` keeps them. It also warns you about rows without a valid IP.
+luxvigil stops at the first row it can't trust (a cost of `nan` or `-5`, negative tokens, an empty account id…) and tells you which line, rather than quietly getting the totals wrong. If your export has a few broken rows and you just want the rest, add `--skip-bad-rows` and it'll tell you how many it skipped. Duplicates only go when they're proven: a row that repeats a request id already seen (a `request_id` column, or LiteLLM's) is the same request exported twice, so it's counted once (`--keep-duplicates` keeps it). A row that's an exact copy of an earlier one but has no request id is kept, because a doubled export and a bot sending the same thing twice in the same second look exactly the same. You're told how many there are and how many requests and dollars they add, and if you know your export is doubled, `--drop-duplicates` leaves them out. It also warns you about rows without a valid IP.
 
 ### Telling it what's normal for you
 

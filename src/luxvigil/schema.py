@@ -18,6 +18,10 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import lru_cache
 
+# columns that hold an id for the request itself. Not one of ours (nothing is checked with it),
+# but when a file has one it's the only real proof that two rows are the same request
+REQUEST_ID_COLUMNS = ("request_id", "requestid", "event_id", "call_id", "litellm_call_id")
+
 # column -> what it is
 COLUMNS = {
     "timestamp": "when the request happened, ISO 8601 (2026-10-01T14:03:22Z) or a unix timestamp. "
@@ -203,7 +207,7 @@ FORMATS = ["csv", "litellm"]
 
 
 def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None, skip_bad=False, fmt="csv",
-              keep_duplicates=False):
+              keep_duplicates=False, drop_duplicates=False):
     """Read a log file and return a list of Request. Fails loudly on bad input.
 
     mapping: {our_column: their_column} for files that name things differently.
@@ -211,12 +215,16 @@ def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None, ski
     notes: pass a list to get told which columns were matched automatically, and about duplicates etc.
     skip_bad: skip rows that don't parse instead of stopping (you're told how many and why).
     fmt: "csv" for our own columns (the default), or the export of a tool we know, like "litellm".
-    keep_duplicates: keep rows that are an exact copy of an earlier one. By default they're
-    dropped: a row identical in every column (request id and timestamp included) is almost
-    always the same request exported twice, and counting it twice can push an account over a
-    threshold and doubles its cost. If your logs have no request id and really do log
-    identical requests in the same second, keep them.
+    Duplicates: a row is only dropped when the file proves it's the same request, i.e. it
+    repeats a request id (a request_id column, or LiteLLM's) that's already been seen.
+    keep_duplicates: keep those too.
+    drop_duplicates: also drop rows that are an exact copy of an earlier one in every column.
+    Without a request id that's a guess: a doubled export and a bot sending the same thing twice
+    in the same second look exactly the same, so by default they're kept and you're told how
+    many there are and what they add, instead of quietly losing real requests.
     """
+    if keep_duplicates and drop_duplicates:
+        raise LogFormatError("--keep-duplicates and --drop-duplicates don't go together, pick one")
     if fmt == "litellm":
         if mapping:
             raise LogFormatError("--map doesn't go with --format litellm, the columns are already known")
@@ -226,7 +234,7 @@ def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None, ski
         if not records:
             raise LogFormatError("no requests in this LiteLLM export")
         return _read_rows(fieldnames, records, None, price_in, price_out, notes, skip_bad, "request",
-                          keep_duplicates)
+                          keep_duplicates, drop_duplicates)
     if fmt != "csv":
         raise LogFormatError(f"unknown format '{fmt}', use one of: {', '.join(FORMATS)}")
 
@@ -239,10 +247,23 @@ def load_logs(path, mapping=None, price_in=None, price_out=None, notes=None, ski
         f.seek(0)
         reader = csv.DictReader(f, delimiter=_separator(first_line))
         return _read_rows(reader.fieldnames, reader, mapping, price_in, price_out, notes, skip_bad, "line",
-                          keep_duplicates)
+                          keep_duplicates, drop_duplicates)
 
 
-def _read_rows(fieldnames, records, mapping, price_in, price_out, notes, skip_bad, unit, keep_duplicates=False):
+def _rows(n):
+    return f"{n:,} row{'s' if n != 1 else ''}"
+
+
+def _cost_or_zero(r, cols):
+    """The cost written in a raw row, 0 if there's none or it doesn't parse (that error comes later)."""
+    try:
+        return _money(r[cols["cost_usd"]].strip(), "cost_usd") if "cost_usd" in cols else 0.0
+    except (ValueError, KeyError, AttributeError):
+        return 0.0
+
+
+def _read_rows(fieldnames, records, mapping, price_in, price_out, notes, skip_bad, unit, keep_duplicates=False,
+               drop_duplicates=False):
     """Check and turn rows (dicts) into Requests. `unit` is how errors point at a row: line or request."""
     cols, found = resolve_columns(fieldnames, mapping)
     if notes is not None:
@@ -263,7 +284,12 @@ def _read_rows(fieldnames, records, mapping, price_in, price_out, notes, skip_ba
 
     # 1. read and check every row
     rows = []
-    seen, duplicates, bad_ips = set(), 0, 0
+    bad_ips = 0
+    by_lower = {name.strip().lower(): name for name in fieldnames or []}
+    id_column = next((by_lower[n] for n in REQUEST_ID_COLUMNS if n in by_lower), None)
+    # same request id twice: the same request, proven. Same row twice with no id: maybe
+    seen_ids, repeated_ids = set(), 0
+    seen_rows, copies, copies_cost = set(), 0, 0.0
     # the same account, email, key, IP... repeat on thousands of rows: keep one copy of each string
     shared = {}
 
@@ -283,14 +309,23 @@ def _read_rows(fieldnames, records, mapping, price_in, price_out, notes, skip_ba
                 raise ValueError("this row has fewer columns than the header")
             if None in r:  # csv puts the extra values under a None key
                 raise ValueError("this row has more columns than the header")
-            # the same request logged twice: count it once (see load_logs). Only a hash of
-            # each row is kept, keeping the rows themselves would double memory on big files
-            fingerprint = hash(tuple(r.values()))
-            if fingerprint in seen:
-                duplicates += 1
-                if not keep_duplicates:
-                    continue
-            seen.add(fingerprint)
+            # duplicates, see load_logs. Only ids and hashes of rows are kept, keeping the rows
+            # themselves would double memory on big files
+            request_id = (r.get(id_column) or "").strip() if id_column else ""
+            if request_id:
+                if request_id in seen_ids:
+                    repeated_ids += 1
+                    if not keep_duplicates:
+                        continue
+                seen_ids.add(request_id)
+            else:
+                fingerprint = hash(tuple(r.values()))
+                if fingerprint in seen_rows:
+                    copies += 1
+                    copies_cost += _cost_or_zero(r, cols)
+                    if drop_duplicates:
+                        continue
+                seen_rows.add(fingerprint)
             if not r[cols["account_id"]].strip():
                 raise ValueError("account_id is empty")
             tin = _tokens(r[cols["input_tokens"]], "input_tokens")
@@ -346,11 +381,22 @@ def _read_rows(fieldnames, records, mapping, price_in, price_out, notes, skip_ba
     if notes is not None:
         if skipped:
             notes.append(f"skipped {skipped:,} bad row{'s' if skipped != 1 else ''}, the first one was {first_error}")
-        if duplicates:
+        if repeated_ids:
             what = ("kept, because of --keep-duplicates" if keep_duplicates
-                    else "left out, they'd count the same request twice")
-            notes.append(f"{duplicates:,} duplicate row{'s' if duplicates != 1 else ''} (exact copy of an earlier one, "
-                         f"every column the same), {what}. Check your export isn't doubled")
+                    else "left out, it's the same request exported twice")
+            repeat = "repeats" if repeated_ids == 1 else "repeat"
+            notes.append(f"{_rows(repeated_ids)} {repeat} a request id that was already seen ({id_column}), {what}")
+        if copies:
+            effect = f"{_rows(copies)}" + (f" and ${copies_cost:,.2f}" if copies_cost else "")
+            are = "is" if copies == 1 else "are"
+            if drop_duplicates:
+                notes.append(f"{_rows(copies)} {are} an exact copy of an earlier one (every column the same), "
+                             f"left out because of --drop-duplicates. That's {effect} fewer in this report")
+            else:
+                notes.append(f"{_rows(copies)} {are} an exact copy of an earlier one (every column the same). Kept: "
+                             "with no request id there's no telling a doubled export from real repeated requests, "
+                             f"and they add {effect} to this report. If you know your export is doubled, "
+                             "run again with --drop-duplicates")
         if unknown_cost and "cost_usd" in cols:
             notes.append(f"{unknown_cost:,} of {len(rows):,} requests have no cost in the logs: they count as "
                          "unknown, not as free, and the dollar totals only cover the rest")

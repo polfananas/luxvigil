@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- duplicates: a row is only left out when it repeats a request id already seen. Exact copies with
+  no request id are kept now (they could be a bot sending the same thing twice in a second), and the
+  report says how many there are and how many requests and dollars they add. `--drop-duplicates`
+  leaves them out if you know your export is doubled. Before, 15 identical requests from 5 accounts
+  showed up as 5 requests and $5, and the bot wasn't found
 - `audit-config` checks more of the setup: an `.env` with keys committed to git, the proxy's port
   published on every network interface, the example database password from LiteLLM's
   `docker-compose.yml` (fix now when the database port is published too), and a database without

@@ -55,31 +55,65 @@ def test_short_row_is_rejected(tmp_path):
         load_logs(path)
 
 
-def test_duplicates_and_bad_ips_are_reported(tmp_path):
+def test_exact_copies_and_bad_ips_are_reported(tmp_path):
     notes = []
     rows = load_logs(write(tmp_path, {}, {}, {"account_id": "b", "ip": "nope"}, {"account_id": "c", "ip": ""}),
                      notes=notes)
-    assert len(rows) == 3  # the exact copy is counted once
-    assert any("1 duplicate row (" in n and "left out" in n for n in notes)
+    assert len(rows) == 4  # no request id, so the copy could be a real second request: kept
+    assert any("1 row is an exact copy" in n and "Kept" in n and "$0.01" in n for n in notes)
     assert any("2 rows without a valid IP" in n for n in notes)
 
 
-def test_duplicates_dont_make_a_bot_or_double_the_cost(tmp_path):
-    # 5 accounts sending one template once each, and the export got tripled: still 5 requests,
-    # no account repeated anything, no bot. With --keep-duplicates you get the old behaviour
-    rows = [{"account_id": f"u{k}", "prompt_hash": "template", "cost_usd": "0.2"} for k in range(5)]
+def test_identical_requests_without_a_request_id_are_all_counted(tmp_path):
+    # 5 accounts each sending the same template 3 times in the same second, logs with no
+    # request id. Counting each row once used to turn 15 requests and $15 into 5 and $5,
+    # and lose the bot.
+    rows = [{"account_id": f"u{k}", "prompt_hash": "template", "cost_usd": "1"} for k in range(5)]
     path = write(tmp_path, *(rows * 3))
-    report = build_report(load_logs(path))
+    notes = []
+    report = build_report(load_logs(path, notes=notes))
+    assert report.requests == 15 and report.bots
+    assert report.total_cost == pytest.approx(15.0)
+    assert any("10 rows are an exact copy" in n and "$10.00" in n and "--drop-duplicates" in n for n in notes)
+
+
+def test_a_doubled_export_without_request_ids_can_still_be_dropped(tmp_path):
+    # 5 accounts sending one template once each, and the export got tripled: with
+    # --drop-duplicates it's 5 requests again, no account repeated anything, no bot
+    rows = [{"account_id": f"u{k}", "prompt_hash": "template", "cost_usd": "0.2"} for k in range(5)]
+    notes = []
+    report = build_report(load_logs(write(tmp_path, *(rows * 3)), drop_duplicates=True, notes=notes))
     assert (report.requests, report.bots) == (5, [])
     assert report.total_cost == pytest.approx(1.0)
+    assert any("left out because of --drop-duplicates" in n and "10 rows and $2.00 fewer" in n for n in notes)
+
+
+def test_a_repeated_request_id_is_the_same_request(tmp_path):
+    # with a request id the copies are proven, so they're dropped without asking
+    rows = [{"account_id": f"u{k}", "prompt_hash": "template", "cost_usd": "0.2", "request_id": f"r{k}"}
+            for k in range(5)]
+    notes = []
+    path = write(tmp_path, *(rows * 3), header=[*COLUMNS, "request_id"])
+    report = build_report(load_logs(path, notes=notes))
+    assert (report.requests, report.bots) == (5, [])
+    assert any("10 rows repeat a request id" in n and "left out" in n for n in notes)
     kept = build_report(load_logs(path, keep_duplicates=True))
-    assert kept.requests == 15 and kept.bots
+    assert kept.requests == 15
 
 
-def test_rows_that_differ_only_in_an_extra_column_are_not_duplicates(tmp_path):
-    # say a request_id column we don't use: two requests in the same second are still two
+def test_rows_that_differ_only_in_their_request_id_are_not_duplicates(tmp_path):
+    # two requests in the same second, everything else the same, are still two
     rows = [{"account_id": "a", "request_id": "r1"}, {"account_id": "a", "request_id": "r2"}]
-    assert len(load_logs(write(tmp_path, *rows, header=[*COLUMNS, "request_id"]))) == 2
+    notes = []
+    assert len(load_logs(write(tmp_path, *rows, header=[*COLUMNS, "request_id"]), notes=notes)) == 2
+    assert notes == []
+
+
+def test_keep_and_drop_duplicates_dont_go_together(tmp_path):
+    with pytest.raises(LogFormatError, match="don't go together"):
+        load_logs(write(tmp_path, {}), keep_duplicates=True, drop_duplicates=True)
+    with pytest.raises(SystemExit):
+        main(["scan", str(write(tmp_path, {})), "--keep-duplicates", "--drop-duplicates"])
 
 
 def test_a_row_with_more_columns_than_the_header_is_a_bad_row(tmp_path):
