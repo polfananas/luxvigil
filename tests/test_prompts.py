@@ -133,3 +133,23 @@ def test_only_an_accounts_own_repeated_prompts_count_as_the_signal():
     assert len(bot.accounts) == 10
     assert (bot.signal_requests, bot.signal_cost_usd) == (33, 33.0)
     assert bot.cost_usd == 133.0  # still part of what the accounts spent, just not the signal
+
+
+def test_a_big_spender_copied_by_cheap_accounts_isnt_the_signal():
+    # a customer repeats a prompt, $100 a go. 4 throwaway accounts copy it for $0.01.
+    # Together they clear the 5-account bar, but the customer's $300 isn't the bot's
+    rows = [req("customer", "P", cost=100.0) for _ in range(3)]
+    rows += [req(f"x{k}", "P", cost=0.01) for k in range(4) for _ in range(3)]
+    (bot,) = find_prompt_bots(rows)
+    assert bot.big_spenders == ["customer"]
+    assert bot.big_spenders_cost_usd == 300.0
+    assert bot.signal_requests == 12 and round(bot.signal_cost_usd, 2) == 0.12
+    assert not bot.is_signal(rows[0])
+
+
+def test_a_bot_whose_accounts_spend_alike_has_no_big_spender():
+    # some spread is normal, 3x the median isn't 10x
+    rows = [req(f"u{k}", "P", cost=c) for k, c in enumerate([1, 1, 2, 3, 3]) for _ in range(3)]
+    (bot,) = find_prompt_bots(rows)
+    assert bot.big_spenders == []
+    assert bot.signal_cost_usd == 30.0

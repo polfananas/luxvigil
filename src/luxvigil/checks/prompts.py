@@ -33,6 +33,14 @@ the repeated prompts are the signal itself. The rest of what those accounts did
 might be perfectly normal, so it's only "worth a look" in the report, never
 added to likely abuse.
 
+One big spender in a group of small ones isn't counted as abuse either. The
+accounts of a bot are interchangeable, so they spend roughly alike. If one of
+them spent more than 10x what the typical member did (the median) on the
+repeated prompts, its spend goes to "worth a look" and the report says so.
+Without this, 4 throwaway accounts spending $0.12 between them could copy a
+prompt a real customer repeats and push that customer's $300 into likely abuse.
+The group itself still shows up, with the cheap accounts as the signal.
+
 Limits worth knowing:
   - a legit integration sending a fixed template on behalf of its users can
     look the same (that's in the "innocent explanation" of --json)
@@ -42,10 +50,13 @@ Limits worth knowing:
     ("otro", "続き") can still get through the 20% rule
   - a bot whose template is a short command ("/start") is skipped by the
     length rule, that's the price of not flagging everyone who types "more"
+  - a bot that really does have one account doing most of the work gets that
+    account's spend in "worth a look" instead of likely abuse
 """
 
 from collections import defaultdict
 from dataclasses import dataclass, field
+from statistics import median
 
 from luxvigil.checks.groups import Groups
 
@@ -61,6 +72,10 @@ class PromptBot:
     signal_cost_usd: float = 0.0
     # (account, prompt) pairs where that account itself sent that prompt min_repeats+ times
     qualifying: set = field(default_factory=set, repr=False, compare=False)
+    # accounts that spent way more than the rest on the repeated prompts: worth a look, not the signal
+    big_spenders: list[str] = field(default_factory=list)
+    big_spenders_requests: int = 0
+    big_spenders_cost_usd: float = 0.0
 
     def is_signal(self, r):
         """Is this request one of the repeated prompts, sent by an account that repeated
@@ -76,13 +91,15 @@ class PromptBot:
         return f"{len(self.accounts):,} accounts sending {what} over and over ({self.repeats:,} times)"
 
 
-def find_prompt_bots(requests, min_accounts=5, min_repeats=3, min_share=0.2, min_chars=20):
+def find_prompt_bots(requests, min_accounts=5, min_repeats=3, min_share=0.2, min_chars=20, max_spread=10):
     """Return the groups of accounts running the same prompts, biggest cost first.
 
     A prompt is flagged when `min_accounts`+ accounts each sent it `min_repeats`+ times,
     and those are at least `min_share` of everyone who sent it.
     Only those accounts are part of the bot, not everyone who ever sent the prompt.
     Prompts known to be shorter than `min_chars` characters are skipped.
+    An account that spent more than `max_spread` times the group's median on the
+    repeated prompts is listed in big_spenders and left out of the signal.
     """
     # 1. how many times each account sent each prompt: prompt -> account -> count
     sends = defaultdict(lambda: defaultdict(int))
@@ -126,13 +143,28 @@ def find_prompt_bots(requests, min_accounts=5, min_repeats=3, min_share=0.2, min
 
     # 4. add up what those accounts spent: on the repeated prompts, and in total
     owner = {acc: bot for bot in bots for acc in bot.accounts}
+    spent = defaultdict(float)  # account -> its spend on the repeated prompts
+    sent = defaultdict(int)
     for r in requests:
         bot = owner.get(r.account_id)
         if bot:
             bot.requests += 1
             bot.cost_usd += r.cost_usd
             if bot.is_signal(r):
-                bot.signal_requests += 1
-                bot.signal_cost_usd += r.cost_usd
+                sent[r.account_id] += 1
+                spent[r.account_id] += r.cost_usd
+
+    # 5. a bot's accounts spend alike. One that spent 10x+ the typical member is
+    #    more likely a real customer whose prompt got copied than part of the bot
+    for bot in bots:
+        typical = median(spent[acc] for acc in bot.accounts)
+        big = [acc for acc in bot.accounts if spent[acc] > 0 and spent[acc] > max_spread * typical]
+        if big:
+            bot.big_spenders = big
+            bot.big_spenders_requests = sum(sent[acc] for acc in big)
+            bot.big_spenders_cost_usd = sum(spent[acc] for acc in big)
+            bot.qualifying = {(acc, p) for acc, p in bot.qualifying if acc not in big}
+        bot.signal_requests = sum(sent[acc] for acc in bot.accounts if acc not in big)
+        bot.signal_cost_usd = sum(spent[acc] for acc in bot.accounts if acc not in big)
 
     return sorted(bots, key=lambda b: (b.signal_cost_usd, b.signal_requests), reverse=True)
