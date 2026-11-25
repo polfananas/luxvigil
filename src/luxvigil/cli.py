@@ -118,7 +118,8 @@ def main(argv=None):
                        help="also drop rows that are an exact copy of an earlier one when there's no request id "
                             "(by default they're kept, since they could be real repeated requests)")
     scan.add_argument("--price-in", type=float, metavar="USD",
-                      help="$ per 1M input tokens, to work out cost when your logs don't have it")
+                      help="$ per 1M input tokens, to work out cost when your logs don't have it "
+                           "(one price for every model: for several, use [prices] in luxvigil.toml)")
     scan.add_argument("--price-out", type=float, metavar="USD",
                       help="$ per 1M output tokens, to work out cost when your logs don't have it")
 
@@ -160,7 +161,8 @@ def main(argv=None):
             notes = []
             rows = load_logs(args.logs, mapping=mapping, price_in=args.price_in, price_out=args.price_out,
                              notes=notes, skip_bad=args.skip_bad_rows, fmt=args.format,
-                             keep_duplicates=args.keep_duplicates, drop_duplicates=args.drop_duplicates)
+                             keep_duplicates=args.keep_duplicates, drop_duplicates=args.drop_duplicates,
+                             prices=config.prices)
         except (OSError, LogFormatError) as e:
             _say(f"luxvigil: can't read {args.logs}: {e}")
             return 1

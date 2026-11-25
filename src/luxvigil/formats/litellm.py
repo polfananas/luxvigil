@@ -17,6 +17,8 @@ What maps to what:
   requester_ip_address   -> ip (unless you turned IP logging off)
   prompt_tokens / completion_tokens / spend -> tokens and cost. No spend is
                             an unknown cost, not a free request
+  model                  -> model, so a request with no spend can still be priced
+                            per model (see [prices] in luxvigil.toml)
   messages               -> prompt_hash and prompt_chars, worked out here and the
                             text thrown away. Only there if you turned on storing
                             prompts in spend logs, otherwise the bot check is skipped
@@ -40,7 +42,7 @@ IDENTITY = ("end_user", "user", "api_key")
 
 # our column -> where it comes from in a LiteLLM spend log
 COLUMNS = ["timestamp", "account_id", "api_key_id", "ip", "input_tokens", "output_tokens",
-           "cost_usd", "prompt_hash", "prompt_chars"]
+           "cost_usd", "prompt_hash", "prompt_chars", "model"]
 
 
 def prompt_hash(text):
@@ -157,6 +159,7 @@ def read_litellm(path, notes=None):
             "cost_usd": "" if spend.lower() in ("none", "null") else spend,
             "prompt_hash": prompt_hash(prompt) if prompt else "",
             "prompt_chars": str(len(prompt)) if prompt else "",
+            "model": _get(record, "model"),
         })
 
     if notes is not None:
