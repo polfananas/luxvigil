@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.6.0
+
+luxvigil now reads the logs of New API and One API, the gateways most AI resellers and relay sites run on.
 
 - `--format new-api` (or `one-api`) reads New API and One API usage logs as they come: the export
   (JSON lines), the log list API, or the `logs` table as CSV. Only usage rows count, the $ is the quota
