@@ -21,7 +21,7 @@ pipx run luxvigil demo        # no install: makes fake logs with abuse in them a
 pip install luxvigil          # then: luxvigil scan your-logs.csv
 ```
 
-Python 3.11+, no dependencies, nothing leaves your machine. Using LiteLLM? `luxvigil scan spend_logs.json --format litellm` reads its spend logs as they come.
+Python 3.11+, no dependencies, nothing leaves your machine. Using LiteLLM? `luxvigil scan spend_logs.json --format litellm` reads its spend logs as they come. New API or One API? `--format new-api`.
 
 ## Tested on real logs
 
@@ -176,6 +176,30 @@ spend logs (LiteLLM has open issues about it, like
 invisible here too. If your spend logs add up to less than your provider's bill, that gap is
 worth a look on its own.
 
+### Using New API or One API?
+
+Most AI resellers and relay sites run on [New API](https://github.com/QuantumNous/new-api) or
+[One API](https://github.com/songquanpeng/one-api), the project it was forked from. Their logs work as
+they come:
+
+```
+$ luxvigil scan logs.jsonl --format new-api --users users.json
+```
+
+Get the logs from New API's export (`GET /api/log/export` as an admin), the
+`GET /api/log/` list saved as JSON, or the `logs` table exported to CSV. `--format one-api` reads the
+same thing. Only usage rows count as requests, top-ups, logins and errors are left out. Accounts are
+usernames, keys are token ids, and the $ is the `quota` each request took from the user's balance,
+at 500,000 quota per $1 (New API's default `QuotaPerUnit`, pass `--quota-per-usd` if you changed it).
+That's what your users spent on your site, not what the upstream provider charged you.
+
+These logs have no emails, and a shared network only links accounts that have something else off
+(like a throwaway email), so without them signup farms can't be found. `--users` brings the emails in
+from the `users` table (exported to CSV, or `GET /api/user/` saved as JSON), joined by user id. Only
+the id, username and email are read, but that file also has password hashes and access tokens, so
+don't leave it lying around. IPs are only there for users who turned on IP logging in their
+settings, and there are no prompts, so copy-paste bots are skipped.
+
 ### Checking a LiteLLM setup
 
 The logs tell you after the fact. Before that, check the files your proxy runs from:
@@ -228,7 +252,7 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
         with:
           python-version: "3.12"
-      - run: pipx run --spec "luxvigil>=0.4.1" luxvigil audit-config deploy/ --fail-on fix-now
+      - run: pipx run --spec "luxvigil>=0.5.0" luxvigil audit-config deploy/ --fail-on fix-now
 ```
 
 ### JSON
